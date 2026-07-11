@@ -29,6 +29,11 @@ ESP32-S3 badge ──(hold button, record WAV)──▶ Vercel FastAPI API ─�
   spends no credit.
 - **Semantic clustering:** local `all-MiniLM-L6-v2` embeddings + cosine similarity
   group similar questions; the badge sees `similar_count`.
+- **Voice assistant (optional):** a chatbot (`CHATBOT_MODE`: mock / Ollama /
+  OpenAI-compatible) generates a short answer in the worker; the dashboard reads it
+  aloud with the browser Web Speech API — which plays through your Windows output
+  (e.g. a paired Bluetooth speaker). Independent of `TRANSCRIPTION_MODE`, uses **no
+  Agora credit**, off by default. See `docs/VOICE_ASSISTANT.md`.
 
 Read `docs/ARCHITECTURE.md` for the design and `docs/API.md` for the contract.
 
@@ -71,8 +76,10 @@ Everything below runs inside **WSL2** unless it says PowerShell.
 1. Create a project at <https://supabase.com>.
 2. Open **SQL Editor** and run **every file in `supabase/migrations/` in order**:
    `001_initial_schema.sql` (tables, the atomic `claim_next_question()` job-claim
-   function, RLS on every table) then `002_rebrand_persephone.sql` (creates the
-   private **`persephone-audio`** bucket; non-destructive). `001` also creates the
+   function, RLS on every table), then `002_rebrand_persephone.sql` (creates the
+   private **`persephone-audio`** bucket; non-destructive), then
+   `003_voice_assistant.sql` (the `assistant_responses` table + answer-job RPCs for
+   the optional voice assistant; non-destructive). `001` also creates the
    historical `whisp-audio` bucket — that is expected and left in place. Upgrading
    an existing project? See [`docs/REBRAND_MIGRATION.md`](docs/REBRAND_MIGRATION.md).
 3. Confirm **Storage → persephone-audio** exists and is **not public**. (If your project
@@ -256,15 +263,16 @@ setup, the manual **canary** live-test, and safety details are in
 ## Developer commands (WSL2)
 
 ```bash
-make test          # API/contract tests (44)
-make test-worker   # worker tests (49) — no heavy deps needed
+make test          # API/contract tests
+make test-worker   # worker tests — no heavy deps needed
 make check         # ruff + format-check + mypy + both suites
 make lint          # ruff check
 make fmt           # ruff format
 make typecheck     # mypy (persephone_api + main)
 ```
-Tests never contact Agora/Supabase, download a model, or need the ESP32 (fakes +
-dependency injection throughout).
+Tests never contact Agora/Supabase, an LLM/Ollama, download a model, or need the
+ESP32 (fakes + dependency injection throughout). The dashboard's speech-queue +
+dedup logic has its own Node tests: `node --test public/voice.test.mjs`.
 
 ## Security & privacy
 

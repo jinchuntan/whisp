@@ -17,8 +17,16 @@ Badges talk to the system over **HTTP polling** — there is no inbound socket t
 ## 2. Supabase Setup
 
 1. Create a Supabase project.
-2. Open the **SQL editor** and run `supabase/migrations/001_initial_schema.sql`. This applies the Postgres schema, the `claim_next_question()` RPC, and creates the private `persephone-audio` bucket.
-3. Confirm the private **`persephone-audio`** bucket exists. The migration creates it; if it is missing, create it manually under **Storage** with **Public = OFF**.
+2. Open the **SQL editor** and run the migrations **in order**:
+   - `supabase/migrations/001_initial_schema.sql` — schema, `claim_next_question()`
+     RPC, private `whisp-audio` bucket.
+   - `supabase/migrations/002_rebrand_persephone.sql` — creates the private
+     `persephone-audio` bucket (non-destructive).
+   - `supabase/migrations/003_voice_assistant.sql` — the `assistant_responses`
+     table + the `claim_next_assistant_response()` / reconciliation RPCs for the
+     voice assistant (non-destructive; only needed if you enable the chatbot).
+3. Confirm the private **`persephone-audio`** bucket exists. Migration 002 creates
+   it; if it is missing, create it manually under **Storage** with **Public = OFF**.
 4. **RLS is enabled on all tables**, so only the `service_role` key (used server-side) can read or write data.
 5. Find your credentials under **Project Settings -> API**:
    - `SUPABASE_URL`
@@ -157,6 +165,10 @@ Notes:
 - These are read via `os.environ` at runtime and **only apply to NEW deployments** — redeploy after changing them.
 - **NEVER** put `SUPABASE_SERVICE_ROLE_KEY` or Agora secrets in browser or firmware code. The `SUPABASE_ANON_KEY` is public by design but is only used server-side here.
 - Passwords, cookies, tokens, and the service-role key are never logged.
+- **Chatbot config is worker-only.** `CHATBOT_MODE`, `CHATBOT_BASE_URL`,
+  `CHATBOT_API_KEY`, etc. live in `worker/.env` (WSL2) — **never** add them to
+  Vercel or the browser. Answer generation runs in the worker, not on Vercel. See
+  [VOICE_ASSISTANT.md](VOICE_ASSISTANT.md).
 
 ## 5. Run the Worker in WSL2
 

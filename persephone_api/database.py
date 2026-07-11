@@ -50,6 +50,11 @@ class Database(Protocol):
     async def mark_cluster_answered(self, cluster_id: str) -> bool: ...
     async def request_recluster(self, round_id: str) -> bool: ...
     async def list_worker_heartbeats(self) -> list[dict[str, Any]]: ...
+    async def list_assistant_responses(self, question_ids: list[str]) -> list[dict[str, Any]]: ...
+    async def enqueue_assistant_response(self, question_id: str) -> dict[str, Any] | None: ...
+    async def requeue_assistant_response(
+        self, question_id: str, from_states: list[str]
+    ) -> dict[str, Any] | None: ...
 
 
 def _first(rows: list[dict[str, Any]] | None) -> dict[str, Any] | None:
@@ -323,6 +328,44 @@ class SupabaseDatabase:
             )
 
         return (await self._run(q)).data or []
+
+    # -- assistant responses (voice-assistant answers) ----------------------
+    async def list_assistant_responses(self, question_ids: list[str]) -> list[dict[str, Any]]:
+        if not question_ids:
+            return []
+
+        def q() -> Any:
+            return (
+                self._c.table("assistant_responses")
+                .select("*")
+                .in_("question_id", question_ids)
+                .execute()
+            )
+
+        return (await self._run(q)).data or []
+
+    async def enqueue_assistant_response(self, question_id: str) -> dict[str, Any] | None:
+        """Create the queued answer job if missing (idempotent). None if unknown q."""
+
+        def q() -> Any:
+            return self._c.rpc(
+                "enqueue_assistant_response", {"p_question_id": question_id}
+            ).execute()
+
+        return _first((await self._run(q)).data)
+
+    async def requeue_assistant_response(
+        self, question_id: str, from_states: list[str]
+    ) -> dict[str, Any] | None:
+        """Reset an existing answer to queued (retry/regenerate). None if unknown q."""
+
+        def q() -> Any:
+            return self._c.rpc(
+                "requeue_assistant_response",
+                {"p_question_id": question_id, "p_from_states": from_states},
+            ).execute()
+
+        return _first((await self._run(q)).data)
 
 
 def get_database() -> Database:

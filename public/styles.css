@@ -434,9 +434,53 @@ textarea { resize: vertical; min-height: 60px; }
 }
 
 /* ==========================================================================
+   VOICE OUTPUT PANEL
+   ========================================================================== */
+.card-voice { border-color: rgba(174, 94, 224, 0.28); }
+.voice-status-row { display: flex; align-items: center; gap: 9px; margin: 6px 0 12px; }
+.voice-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted-dim); flex: none; }
+.voice-dot.voice-off { background: var(--muted-dim); }
+.voice-dot.voice-ready { background: var(--green); box-shadow: 0 0 10px rgba(0, 235, 113, 0.6); }
+.voice-dot.voice-speaking { background: var(--cyan); box-shadow: 0 0 12px rgba(0, 245, 245, 0.7); animation: pulse 1s ease-in-out infinite; }
+.voice-dot.voice-err { background: var(--coral); }
+.voice-status-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.voice-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.voice-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 4px 0 10px; cursor: pointer; }
+.voice-toggle input { accent-color: var(--cyan); width: 15px; height: 15px; }
+.voice-field { margin-top: 8px; }
+.voice-field select, .voice-field input[type="range"] { width: 100%; }
+.voice-field input[type="range"] { accent-color: var(--cyan); }
+.voice-hint { margin-top: 10px; line-height: 1.4; }
+
+/* ==========================================================================
+   ASSISTANT ANSWER (nested in a question card)
+   ========================================================================== */
+.assistant {
+  margin-top: 11px; padding: 11px 12px; border-radius: var(--r-sm);
+  background: rgba(174, 94, 224, 0.06); border: 1px solid rgba(174, 94, 224, 0.22);
+}
+.assistant-head { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.assistant-label {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--purple);
+}
+.tag-astatus { font-weight: 700; }
+.tag-astatus.st-done { color: var(--green); border-color: rgba(0, 235, 113, 0.4); }
+.tag-astatus.st-error { color: var(--coral); border-color: rgba(234, 62, 48, 0.4); }
+.tag-astatus.st-generating { color: var(--yellow); border-color: rgba(255, 210, 40, 0.4); }
+.tag-astatus.st-queued { color: var(--muted); }
+.assistant-text { font-size: 14.5px; line-height: 1.5; margin: 0; }
+.assistant-text.pending { color: var(--muted); font-style: italic; }
+.assistant-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.assistant-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+
+/* ==========================================================================
    MOTION PREFERENCES
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .waveform span { height: 60%; }
+  .voice-dot.voice-speaking { animation: none; }
 }

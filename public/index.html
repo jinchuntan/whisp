@@ -165,6 +165,36 @@
             <button type="button" id="recluster" class="btn btn-ghost btn-sm btn-block">Recompute topics</button>
           </details>
         </section>
+
+        <!-- Voice output (browser Web Speech API -> Windows output device) -->
+        <section id="voice-card" class="card card-voice">
+          <p class="kicker">Voice output</p>
+          <div class="voice-status-row">
+            <span id="voice-dot" class="voice-dot"></span>
+            <span id="voice-status" class="voice-status-text">Voice disabled</span>
+          </div>
+          <div class="voice-actions">
+            <button type="button" id="voice-enable" class="btn btn-primary btn-sm">Enable voice</button>
+            <button type="button" id="voice-test" class="btn btn-ghost btn-sm" disabled>Test voice</button>
+            <button type="button" id="voice-stop" class="btn btn-ghost btn-sm" disabled>Stop</button>
+          </div>
+          <label class="voice-toggle">
+            <input type="checkbox" id="voice-autospeak" checked />
+            <span>Auto-speak new answers</span>
+          </label>
+          <div class="field voice-field">
+            <label for="voice-select">Browser voice</label>
+            <select id="voice-select"></select>
+          </div>
+          <div class="field voice-field">
+            <label for="voice-rate">Speaking rate · <span id="voice-rate-val" class="mono">1.0×</span></label>
+            <input type="range" id="voice-rate" min="0.6" max="1.4" step="0.1" value="1" />
+          </div>
+          <p id="voice-hint" class="voice-hint muted small">
+            Persephone speaks through your current Windows output. To use a Bluetooth speaker,
+            pair it and pick it in Windows Sound settings, then click <strong>Enable voice</strong>.
+          </p>
+        </section>
       </aside>
 
       <!-- Live questions -->
@@ -212,6 +242,7 @@
   <!-- Toast / live notifications -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <script src="/voice.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

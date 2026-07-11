@@ -173,7 +173,13 @@ The dashboard's single source of truth (poll every ~1.5 s).
       "transcript": "...", "provider_used": "faster_whisper",
       "fallback_used": false, "processing_ms": 1300, "round_id": "...",
       "cluster_id": "...", "similar_count": 3, "created_at": "...",
-      "answered_at": null }
+      "answered_at": null,
+      "assistant_response": {
+        "id": "...", "status": "done",
+        "response_text": "Artificial intelligence can help…",
+        "provider": "ollama", "model": "llama3.2:3b",
+        "processing_ms": 920, "created_at": "...", "completed_at": "..." }
+    }
   ],
   "clusters": [
     { "id": "...", "canonical_question": "...", "question_count": 3,
@@ -205,6 +211,22 @@ Closes the round. `404` if unknown.
 
 ### `POST /api/v1/admin/questions/{id}/answered`  → `200`
 Marks a question answered (`{"ok": true}`). `404` if unknown.
+
+### `POST /api/v1/admin/questions/{id}/assistant/generate`  → `200`
+Enqueues the voice-assistant answer job for a question if one does not exist yet.
+Idempotent — repeated calls return the same job (no duplicates). Returns the
+`AssistantResponseOut`. `404` if the question is unknown. Host session + CSRF.
+
+### `POST /api/v1/admin/questions/{id}/assistant/retry`  → `200`
+Re-runs a **failed** answer (resets an `error` job to `queued`; leaves an
+in-flight job alone). Creates the job if none exists. `404` if unknown.
+
+### `POST /api/v1/admin/questions/{id}/assistant/regenerate`  → `200`
+Re-runs a **completed or failed** answer (resets `done`/`error` to `queued`).
+`404` if unknown.
+
+> The **badge** polling response (`GET /questions/{id}`) is intentionally
+> unchanged and carries **no** assistant fields — answers are host-only.
 
 ### `POST /api/v1/admin/clusters/{id}/answered`  → `200`
 Marks a cluster answered. `404` if unknown.

@@ -90,6 +90,19 @@ const confirmOk = $("confirm-ok");
 
 const toastEl = $("toast");
 
+// Voice output panel
+const voiceCard = $("voice-card");
+const voiceDot = $("voice-dot");
+const voiceStatus = $("voice-status");
+const voiceEnableBtn = $("voice-enable");
+const voiceTestBtn = $("voice-test");
+const voiceStopBtn = $("voice-stop");
+const voiceAutoSpeak = $("voice-autospeak");
+const voiceSelect = $("voice-select");
+const voiceRate = $("voice-rate");
+const voiceRateVal = $("voice-rate-val");
+const voiceHint = $("voice-hint");
+
 // --------------------------------------------------------------------------
 // State
 // --------------------------------------------------------------------------
@@ -98,6 +111,8 @@ let pollTimer = null;
 let pollInFlight = false;
 let pollAgain = false;
 let currentOpenRoundId = null;
+let lastAssistantResponses = []; // assistant responses from the latest poll
+let baselinePrimed = false; // backlog marked historical once per session
 
 // --------------------------------------------------------------------------
 // API wrapper — single source of truth for network + error handling.
@@ -174,6 +189,7 @@ async function bootstrap() {
 
 function showLogin(message) {
   stopPolling();
+  resetVoiceSession(); // cancel speech + clear pending queue (prefs are kept)
   toggleProfile(false);
   appView.hidden = true;
   loginView.hidden = false;
@@ -189,6 +205,7 @@ function enterConsole(email) {
   profileInitials.textContent = initials(email);
   questionsSkeleton.hidden = false;
   connStatus.textContent = "connecting…";
+  baselinePrimed = false; // fresh session: the next poll re-establishes the baseline
   startPolling();
 }
 
@@ -393,6 +410,28 @@ function renderState(state) {
   } else {
     clustersEmpty.hidden = true;
   }
+
+  // --- Voice: auto-speak newly completed answers (exactly once) ---
+  processVoice(collectAssistantResponses(questions));
+}
+
+// Flatten assistant answers from the questions, sorted by completion time so
+// multiple new answers are spoken in a predictable order.
+function collectAssistantResponses(questions) {
+  const out = [];
+  for (const q of questions) {
+    const a = q.assistant_response;
+    if (a) {
+      out.push({
+        id: a.id,
+        status: a.status,
+        response_text: a.response_text,
+        completed_at: a.completed_at,
+      });
+    }
+  }
+  out.sort((x, y) => String(x.completed_at || "").localeCompare(String(y.completed_at || "")));
+  return out;
 }
 
 /* Keyed list reconciliation: unchanged cards are left untouched (no flicker,
@@ -425,6 +464,7 @@ function reconcile(container, items, keyFn, sigFn, buildFn) {
 }
 
 function questionSig(q) {
+  const a = q.assistant_response;
   return [
     q.status,
     q.transcript || "",
@@ -434,6 +474,12 @@ function questionSig(q) {
     q.similar_count == null ? "" : q.similar_count,
     q.safe_error_message || "",
     q.answered_at ? 1 : 0,
+    // Assistant answer fields — a change here must rerender the card.
+    a ? a.status : "",
+    a ? a.response_text || "" : "",
+    a ? a.provider || "" : "",
+    a ? a.model || "" : "",
+    a && a.processing_ms != null ? a.processing_ms : "",
   ].join("~");
 }
 
@@ -454,6 +500,9 @@ function buildQuestionCard(q) {
   card.appendChild(top);
 
   card.appendChild(questionText(q));
+
+  // Voice-assistant answer (only meaningful once a question is transcribed).
+  if (q.status === "done") card.appendChild(buildAssistantBlock(q));
 
   const foot = el("div", "qcard-foot");
   foot.appendChild(timeTag(q.created_at));
@@ -479,6 +528,73 @@ function questionText(q) {
     error: q.safe_error_message || "Transcription unavailable.",
   };
   return el("p", "qtext pending", pending[q.status] || "Processing…");
+}
+
+// Assistant answer sub-card. All text via textContent (answer is model output,
+// still treated as untrusted). Buttons hit the host-only assistant endpoints.
+function buildAssistantBlock(q) {
+  const a = q.assistant_response;
+  const wrap = el("div", "assistant");
+  const head = el("div", "assistant-head");
+  head.appendChild(el("span", "assistant-label", "Persephone answer"));
+  if (a) head.appendChild(el("span", `tag tag-astatus st-${a.status}`, a.status));
+  wrap.appendChild(head);
+
+  if (!a) {
+    wrap.appendChild(
+      assistantButton(q.id, "generate", "Generate answer", "Generating answer…", "btn-ghost")
+    );
+    return wrap;
+  }
+
+  if (a.status === "done") {
+    wrap.appendChild(el("p", "assistant-text", a.response_text || ""));
+    const meta = el("div", "assistant-meta");
+    meta.appendChild(el("span", "tag tag-provider", providerModelLabel(a)));
+    if (typeof a.processing_ms === "number") {
+      meta.appendChild(el("span", "tag", `${a.processing_ms} ms`));
+    }
+    wrap.appendChild(meta);
+    const actions = el("div", "assistant-actions");
+    actions.appendChild(replayButton(a));
+    actions.appendChild(
+      assistantButton(q.id, "regenerate", "Regenerate", "Regenerating…", "btn-ghost")
+    );
+    wrap.appendChild(actions);
+  } else if (a.status === "error") {
+    wrap.appendChild(
+      el("p", "assistant-text pending", a.safe_error_message || "Answer generation failed.")
+    );
+    wrap.appendChild(assistantButton(q.id, "retry", "Retry answer", "Retrying…", "btn-ghost"));
+  } else {
+    // queued | generating
+    const msg = a.status === "generating" ? "Persephone is thinking…" : "Queued for an answer…";
+    wrap.appendChild(el("p", "assistant-text pending", msg));
+  }
+  return wrap;
+}
+
+function assistantButton(questionId, action, label, okMsg, variant) {
+  const btn = el("button", `btn ${variant || "btn-ghost"} btn-sm`, label);
+  btn.type = "button";
+  btn.addEventListener("click", () =>
+    act(btn, () => api(`/admin/questions/${questionId}/assistant/${action}`, { method: "POST" }), okMsg)
+  );
+  return btn;
+}
+
+function replayButton(a) {
+  const btn = el("button", "btn btn-ghost btn-sm", "▶ Replay");
+  btn.type = "button";
+  btn.disabled = !speechSupported;
+  btn.title = speechSupported ? "Speak this answer" : "Speech is unavailable in this browser";
+  btn.addEventListener("click", () => replayAnswer(a));
+  return btn;
+}
+
+function providerModelLabel(a) {
+  const p = providerLabel(a.provider || "assistant");
+  return a.model ? `${p} · ${a.model}` : p;
 }
 
 function clusterSig(c) {
@@ -671,6 +787,9 @@ function providerLabel(p) {
   const v = String(p).toLowerCase();
   if (v.includes("agora")) return "Agora";
   if (v.includes("whisper")) return "Faster-Whisper";
+  if (v === "ollama") return "Ollama";
+  if (v === "openai_compatible") return "OpenAI-compatible";
+  if (v === "mock") return "Mock";
   return p;
 }
 
@@ -690,6 +809,180 @@ setInterval(() => {
     if (node.textContent !== t) node.textContent = t;
   });
 }, 1000);
+
+// --------------------------------------------------------------------------
+// Voice output (browser Web Speech API). The speech queue + exactly-once dedup
+// logic lives in voice.js (window.PersephoneVoice) and is unit-tested; here we
+// only wire it to the DOM and the poll loop. No tokens/secrets are stored — just
+// harmless voice preferences (localStorage) and spoken-answer ids (sessionStorage).
+// --------------------------------------------------------------------------
+const VOICE_PREFS_KEY = "persephone_voice_prefs";
+const speechSupported =
+  typeof window !== "undefined" && "speechSynthesis" in window && !!window.PersephoneVoice;
+
+let voice = null; // { queue, controller, prefs, enabled }
+
+function loadVoicePrefs() {
+  const prefs = { voiceURI: "", rate: 1, autoSpeak: true };
+  try {
+    const raw = localStorage.getItem(VOICE_PREFS_KEY);
+    if (raw) Object.assign(prefs, JSON.parse(raw));
+  } catch (_) {
+    /* ignore */
+  }
+  return prefs;
+}
+
+function saveVoicePrefs() {
+  if (!voice) return;
+  try {
+    localStorage.setItem(VOICE_PREFS_KEY, JSON.stringify(voice.prefs));
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function initVoice() {
+  if (!speechSupported) {
+    setVoiceStatus("unavailable");
+    for (const b of [voiceEnableBtn, voiceTestBtn, voiceStopBtn]) b.disabled = true;
+    voiceAutoSpeak.disabled = true;
+    voiceSelect.disabled = true;
+    voiceRate.disabled = true;
+    voiceHint.textContent =
+      "This browser doesn't support speech synthesis. The dashboard still works — open it in Chrome or Edge to hear answers.";
+    return;
+  }
+  const V = window.PersephoneVoice;
+  const prefs = loadVoicePrefs();
+  const speaker = V.createBrowserSpeaker(window.speechSynthesis, window.SpeechSynthesisUtterance);
+  const queue = new V.SpeechQueue({
+    speaker,
+    onStateChange: (s) =>
+      setVoiceStatus(s === "speaking" ? "speaking" : voice && voice.enabled ? "ready" : "disabled"),
+  });
+  const memory = new V.SpokenMemory({ storage: window.sessionStorage });
+  const controller = new V.AutoSpeakController({ spokenMemory: memory });
+  voice = { queue, controller, prefs, enabled: false };
+
+  voiceAutoSpeak.checked = prefs.autoSpeak !== false;
+  voiceRate.value = String(prefs.rate || 1);
+  voiceRateVal.textContent = `${Number(prefs.rate || 1).toFixed(1)}×`;
+  controller.setAutoSpeak(voiceAutoSpeak.checked, lastAssistantResponses);
+
+  populateVoices();
+  // Voices load asynchronously in most browsers.
+  window.speechSynthesis.onvoiceschanged = populateVoices;
+  setVoiceStatus("disabled");
+}
+
+function populateVoices() {
+  if (!voice) return;
+  const voices = window.speechSynthesis.getVoices() || [];
+  const prev = voice.prefs.voiceURI;
+  voiceSelect.textContent = "";
+  const auto = el("option", null, "Browser default");
+  auto.value = "";
+  voiceSelect.appendChild(auto);
+  for (const v of voices) {
+    const opt = el("option", null, `${v.name} (${v.lang})`);
+    opt.value = v.voiceURI;
+    voiceSelect.appendChild(opt);
+  }
+  voiceSelect.value = prev || "";
+}
+
+function setVoiceStatus(kind) {
+  const map = {
+    disabled: ["voice-off", "Voice disabled"],
+    ready: ["voice-ready", "Voice ready"],
+    speaking: ["voice-speaking", "Persephone is speaking…"],
+    unavailable: ["voice-err", "Speech unavailable"],
+  };
+  const [cls, text] = map[kind] || map.disabled;
+  voiceDot.className = `voice-dot ${cls}`;
+  voiceStatus.textContent = text;
+}
+
+function currentSpeechOpts() {
+  return { rate: Number(voice.prefs.rate || 1), voiceURI: voice.prefs.voiceURI || "" };
+}
+
+function speakNow(text) {
+  if (!voice || !text) return;
+  const o = currentSpeechOpts();
+  voice.queue.enqueue({ text, rate: o.rate, voiceURI: o.voiceURI });
+}
+
+function onEnableVoice() {
+  if (!voice) return;
+  if (!voice.enabled) {
+    voice.enabled = true;
+    voice.controller.setEnabled(true, lastAssistantResponses);
+    voiceEnableBtn.textContent = "Disable voice";
+    voiceEnableBtn.classList.remove("btn-primary");
+    voiceTestBtn.disabled = false;
+    voiceStopBtn.disabled = false;
+    setVoiceStatus("ready");
+    // Required user gesture: browsers may block speech until an interaction.
+    speakNow("Persephone voice output is ready.");
+  } else {
+    voice.enabled = false;
+    voice.controller.setEnabled(false, lastAssistantResponses);
+    voice.queue.stop();
+    voiceEnableBtn.textContent = "Enable voice";
+    voiceEnableBtn.classList.add("btn-primary");
+    voiceTestBtn.disabled = true;
+    voiceStopBtn.disabled = true;
+    setVoiceStatus("disabled");
+  }
+}
+
+function onTestVoice() {
+  speakNow("This is Persephone testing voice output through your selected speaker.");
+}
+
+function stopVoice() {
+  if (voice) voice.queue.stop();
+}
+
+function replayAnswer(a) {
+  if (!speechSupported) {
+    toast("Speech isn't available in this browser.", "err");
+    return;
+  }
+  if (voice) voice.controller.markReplayed(a.id);
+  speakNow(a.response_text);
+}
+
+// Reset speech on logout/session-loss: cancel + clear the queue, drop the enabled
+// state (a fresh session re-requires the Enable gesture). Preferences are kept.
+function resetVoiceSession() {
+  baselinePrimed = false;
+  lastAssistantResponses = [];
+  if (!voice) return;
+  voice.queue.stop();
+  voice.enabled = false;
+  voice.controller.setEnabled(false, []);
+  voiceEnableBtn.textContent = "Enable voice";
+  voiceEnableBtn.classList.add("btn-primary");
+  voiceTestBtn.disabled = true;
+  voiceStopBtn.disabled = true;
+  setVoiceStatus("disabled");
+}
+
+// Feed the controller after each poll: auto-speak newly completed answers once.
+function processVoice(responses) {
+  lastAssistantResponses = responses;
+  if (!voice) return;
+  if (!baselinePrimed) {
+    // On (re)entry, everything already present is historical — never read the backlog.
+    voice.controller.primeBaseline(responses);
+    baselinePrimed = true;
+  }
+  const toSpeak = voice.controller.ingest(responses);
+  for (const r of toSpeak) speakNow(r.response_text);
+}
 
 // --------------------------------------------------------------------------
 // Wire-up
@@ -729,9 +1022,33 @@ reclusterBtn.addEventListener("click", () =>
   act(reclusterBtn, () => api("/admin/recluster", { method: "POST" }), "Recomputing topics…")
 );
 
+// Voice output controls.
+voiceEnableBtn.addEventListener("click", onEnableVoice);
+voiceTestBtn.addEventListener("click", onTestVoice);
+voiceStopBtn.addEventListener("click", stopVoice);
+voiceAutoSpeak.addEventListener("change", () => {
+  if (!voice) return;
+  voice.prefs.autoSpeak = voiceAutoSpeak.checked;
+  voice.controller.setAutoSpeak(voiceAutoSpeak.checked, lastAssistantResponses);
+  saveVoicePrefs();
+});
+voiceSelect.addEventListener("change", () => {
+  if (!voice) return;
+  voice.prefs.voiceURI = voiceSelect.value;
+  saveVoicePrefs();
+});
+voiceRate.addEventListener("input", () => {
+  if (!voice) return;
+  const rate = Number(voiceRate.value) || 1;
+  voice.prefs.rate = rate;
+  voiceRateVal.textContent = `${rate.toFixed(1)}×`;
+  saveVoicePrefs();
+});
+
 // Refresh immediately when the operator returns to the tab.
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && active) poll();
 });
 
+initVoice();
 bootstrap();

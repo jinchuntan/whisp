@@ -116,6 +116,24 @@ class RoundOut(BaseModel):
     closed_at: datetime | None = None
 
 
+class AssistantResponseOut(BaseModel):
+    """The voice-assistant answer for a question (nested in admin state).
+
+    Provider/model are safe display metadata (never credentials). This is host-
+    only; the badge polling contract is unchanged.
+    """
+
+    id: str
+    status: str  # queued | generating | done | error
+    response_text: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    processing_ms: int | None = None
+    safe_error_message: str | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
 class QuestionOut(BaseModel):
     id: str
     status: str
@@ -131,6 +149,8 @@ class QuestionOut(BaseModel):
     safe_error_message: str | None = None
     created_at: datetime | None = None
     answered_at: datetime | None = None
+    # Present only once a chatbot answer job exists for this question.
+    assistant_response: AssistantResponseOut | None = None
 
 
 class ClusterOut(BaseModel):

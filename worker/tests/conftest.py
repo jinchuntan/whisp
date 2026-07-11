@@ -81,6 +81,8 @@ class FakeSupabaseClient:
         self.rpc_returns: dict[str, Any] = {}
         self.updates: list[tuple[str, dict]] = []
         self.inserts: list[tuple[str, dict]] = []
+        # Rows returned by table(name).select(...)...execute(), keyed by table.
+        self.select_returns: dict[str, Any] = {}
 
     # rpc(name, params).execute()
     def rpc(self, name: str, params: dict) -> Any:
@@ -119,7 +121,27 @@ class _FakeTable:
         self._payload = payload
         return self
 
+    def select(self, *_: Any, **__: Any) -> _FakeTable:
+        self._op = "select"
+        return self
+
     def eq(self, *_: Any) -> _FakeTable:
+        return self
+
+    # Chainable no-op filters/ordering used by select queries.
+    def neq(self, *_: Any) -> _FakeTable:
+        return self
+
+    def gte(self, *_: Any) -> _FakeTable:
+        return self
+
+    def lt(self, *_: Any) -> _FakeTable:
+        return self
+
+    def limit(self, *_: Any) -> _FakeTable:
+        return self
+
+    def order(self, *_: Any, **__: Any) -> _FakeTable:
         return self
 
     def execute(self) -> FakeResult:
@@ -127,6 +149,8 @@ class _FakeTable:
             self._c.updates.append((self._name, self._payload or {}))
         elif self._op in ("insert", "upsert"):
             self._c.inserts.append((self._name, self._payload or {}))
+        elif self._op == "select":
+            return FakeResult(self._c.select_returns.get(self._name, []))
         return FakeResult(self._payload)
 
 

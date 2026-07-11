@@ -81,6 +81,8 @@ class FakeDatabase:
         self.clusters: dict[str, dict[str, Any]] = {}
         self.badges: dict[str, dict[str, Any]] = {}
         self.heartbeats: list[dict[str, Any]] = []
+        # assistant_responses keyed by question_id (unique per question).
+        self.assistant_responses: dict[str, dict[str, Any]] = {}
 
     # -- seed helpers (tests only) -----------------------------------------
     def seed_event(self, name: str = "Demo", active: bool = True) -> dict[str, Any]:
@@ -118,6 +120,32 @@ class FakeDatabase:
         }
         self.clusters[cl["id"]] = cl
         return cl
+
+    def seed_assistant_response(
+        self,
+        question_id: str,
+        *,
+        status: str = "done",
+        response_text: str | None = "Here is a concise spoken answer.",
+        provider: str | None = "mock",
+        model: str | None = "mock",
+        processing_ms: int | None = 12,
+    ) -> dict[str, Any]:
+        row = {
+            "id": str(uuid.uuid4()),
+            "question_id": question_id,
+            "status": status,
+            "response_text": response_text if status == "done" else None,
+            "provider": provider if status in ("done",) else None,
+            "model": model if status in ("done",) else None,
+            "processing_ms": processing_ms if status == "done" else None,
+            "safe_error_message": "Assistant unavailable" if status == "error" else None,
+            "attempt_count": 1,
+            "created_at": _now_iso(),
+            "completed_at": _now_iso() if status in ("done", "error") else None,
+        }
+        self.assistant_responses[question_id] = row
+        return row
 
     def seed_heartbeat(self, worker_id: str, mode: str, last_seen: str | None = None) -> dict:
         hb = {
@@ -271,6 +299,61 @@ class FakeDatabase:
     # -- heartbeats --------------------------------------------------------
     async def list_worker_heartbeats(self) -> list[dict[str, Any]]:
         return list(self.heartbeats)
+
+    # -- assistant responses -----------------------------------------------
+    async def list_assistant_responses(self, question_ids: list[str]) -> list[dict[str, Any]]:
+        ids = set(question_ids)
+        return [r for qid, r in self.assistant_responses.items() if qid in ids]
+
+    def _new_assistant_row(self, question_id: str) -> dict[str, Any]:
+        rnd = next(
+            (r for r in self.rounds if r["id"] == self.questions[question_id].get("round_id")), None
+        )
+        return {
+            "id": str(uuid.uuid4()),
+            "question_id": question_id,
+            "round_id": rnd["id"] if rnd else None,
+            "status": "queued",
+            "response_text": None,
+            "provider": None,
+            "model": None,
+            "processing_ms": None,
+            "safe_error_message": None,
+            "attempt_count": 0,
+            "created_at": _now_iso(),
+            "completed_at": None,
+        }
+
+    async def enqueue_assistant_response(self, question_id: str) -> dict[str, Any] | None:
+        if question_id not in self.questions:
+            return None
+        row = self.assistant_responses.get(question_id)
+        if row is None:
+            row = self._new_assistant_row(question_id)
+            self.assistant_responses[question_id] = row
+        return row
+
+    async def requeue_assistant_response(
+        self, question_id: str, from_states: list[str]
+    ) -> dict[str, Any] | None:
+        if question_id not in self.questions:
+            return None
+        row = self.assistant_responses.get(question_id)
+        if row is None:
+            row = self._new_assistant_row(question_id)
+            self.assistant_responses[question_id] = row
+        elif row.get("status") in from_states:
+            row.update(
+                status="queued",
+                response_text=None,
+                provider=None,
+                model=None,
+                processing_ms=None,
+                safe_error_message=None,
+                attempt_count=0,
+                completed_at=None,
+            )
+        return row
 
 
 class FakeAuthClient:

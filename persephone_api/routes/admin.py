@@ -14,6 +14,7 @@ from persephone_api.database import Database, get_database
 from persephone_api.models import AGORA_MODES
 from persephone_api.schemas import (
     AdminStateResponse,
+    AssistantResponseOut,
     ClusterOut,
     CreateEventRequest,
     CreateRoundRequest,
@@ -71,9 +72,28 @@ def _round_out(row: dict[str, Any]) -> RoundOut:
     )
 
 
-def _question_out(row: dict[str, Any], cluster_counts: dict[str, int]) -> QuestionOut:
+def _assistant_out(row: dict[str, Any]) -> AssistantResponseOut:
+    return AssistantResponseOut(
+        id=row["id"],
+        status=row.get("status") or "queued",
+        response_text=row.get("response_text"),
+        provider=row.get("provider"),
+        model=row.get("model"),
+        processing_ms=row.get("processing_ms"),
+        safe_error_message=row.get("safe_error_message"),
+        created_at=_parse_ts(row.get("created_at")),
+        completed_at=_parse_ts(row.get("completed_at")),
+    )
+
+
+def _question_out(
+    row: dict[str, Any],
+    cluster_counts: dict[str, int],
+    assistant_by_qid: dict[str, dict[str, Any]] | None = None,
+) -> QuestionOut:
     cluster_id = row.get("cluster_id")
     similar = cluster_counts.get(cluster_id) if cluster_id else None
+    assistant_row = (assistant_by_qid or {}).get(row["id"])
     return QuestionOut(
         id=row["id"],
         status=row["status"],
@@ -89,6 +109,7 @@ def _question_out(row: dict[str, Any], cluster_counts: dict[str, int]) -> Questi
         safe_error_message=row.get("safe_error_message"),
         created_at=_parse_ts(row.get("created_at")),
         answered_at=_parse_ts(row.get("answered_at")),
+        assistant_response=_assistant_out(assistant_row) if assistant_row else None,
     )
 
 
@@ -135,6 +156,11 @@ async def admin_state(
     cluster_counts = {c["id"]: int(c.get("question_count") or 0) for c in clusters_rows}
 
     questions_rows = await db.list_recent_questions(event_id)
+
+    # Attach any voice-assistant answers for the listed questions (host-only).
+    assistant_rows = await db.list_assistant_responses([q["id"] for q in questions_rows])
+    assistant_by_qid = {r["question_id"]: r for r in assistant_rows if r.get("question_id")}
+
     workers_rows = await db.list_worker_heartbeats()
     workers = [_worker_out(w, settings.worker_offline_seconds, now) for w in workers_rows]
 
@@ -145,7 +171,7 @@ async def admin_state(
         event=_event_out(event) if event else None,
         open_round=_round_out(open_round_row) if open_round_row else None,
         rounds=[_round_out(r) for r in rounds_rows],
-        questions=[_question_out(q, cluster_counts) for q in questions_rows],
+        questions=[_question_out(q, cluster_counts, assistant_by_qid) for q in questions_rows],
         clusters=[_cluster_out(c) for c in clusters_rows],
         workers=workers,
         worker_online=any(w.online for w in workers),
@@ -191,6 +217,43 @@ async def mark_question_answered(
     if not await db.mark_question_answered(question_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown question")
     return OkResponse()
+
+
+# ---------------------------------------------------------------------------
+# Voice-assistant answer actions (host-only; cookie session + CSRF via the
+# router dependency). All three are idempotent and cannot create duplicate jobs
+# (question_id is unique in the DB), so repeated clicks are safe.
+# ---------------------------------------------------------------------------
+@router.post("/questions/{question_id}/assistant/generate", response_model=AssistantResponseOut)
+async def assistant_generate(
+    question_id: str, db: Database = Depends(get_database)
+) -> AssistantResponseOut:
+    row = await db.enqueue_assistant_response(question_id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown question")
+    return _assistant_out(row)
+
+
+@router.post("/questions/{question_id}/assistant/retry", response_model=AssistantResponseOut)
+async def assistant_retry(
+    question_id: str, db: Database = Depends(get_database)
+) -> AssistantResponseOut:
+    # Retry only re-runs a failed answer (never disturbs an in-flight one).
+    row = await db.requeue_assistant_response(question_id, ["error"])
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown question")
+    return _assistant_out(row)
+
+
+@router.post("/questions/{question_id}/assistant/regenerate", response_model=AssistantResponseOut)
+async def assistant_regenerate(
+    question_id: str, db: Database = Depends(get_database)
+) -> AssistantResponseOut:
+    # Regenerate re-runs a completed or failed answer (leaves in-flight alone).
+    row = await db.requeue_assistant_response(question_id, ["done", "error"])
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown question")
+    return _assistant_out(row)
 
 
 @router.post("/clusters/{cluster_id}/answered", response_model=OkResponse)

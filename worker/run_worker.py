@@ -14,6 +14,8 @@ import asyncio
 import logging
 import sys
 
+from persephone_worker.assistant import AssistantProcessor
+from persephone_worker.chatbot import build_chatbot_provider
 from persephone_worker.config import WorkerSettings, get_worker_settings
 from persephone_worker.queue import JobQueue
 from persephone_worker.worker import Worker
@@ -39,8 +41,16 @@ def main() -> None:
     client = build_client(settings)
     queue = JobQueue(client, settings.supabase_audio_bucket, settings.resolved_worker_id)
     worker = Worker(settings, queue)
+    # The answer generator runs as a SEPARATE async task sharing the same queue,
+    # so a slow LLM never blocks transcription. It is inert when chatbot is
+    # disabled (provider is None -> no claims, no network).
+    assistant = AssistantProcessor(settings, queue, build_chatbot_provider(settings))
+
+    async def run_all() -> None:
+        await asyncio.gather(worker.run_forever(), assistant.run_forever())
+
     try:
-        asyncio.run(worker.run_forever())
+        asyncio.run(run_all())
     except KeyboardInterrupt:
         print("\nworker stopped", file=sys.stderr)
     finally:

@@ -207,6 +207,103 @@ class JobQueue:
             return int(count)
         return len(res.data or [])
 
+    # -- assistant responses (voice-assistant answers) ----------------------
+    # A distinct, independent job table from questions. A failure here never
+    # touches a transcribed question, so transcription/clustering stay usable.
+    def reconcile_assistant_jobs(self, limit: int) -> int:
+        """Idempotently enqueue missing answer jobs for done+transcribed questions.
+
+        Crash-safe: this closes the gap where a worker transcribes a question but
+        dies before enqueueing its answer job. Returns the number newly enqueued.
+        """
+        res = self._c.rpc("enqueue_missing_assistant_responses", {"p_limit": limit}).execute()
+        data = res.data
+        if isinstance(data, list):
+            return int(data[0]) if data else 0
+        return int(data or 0)
+
+    def claim_assistant(self, lease_seconds: int) -> dict[str, Any] | None:
+        res = self._c.rpc(
+            "claim_next_assistant_response",
+            {"p_worker_id": self.worker_id, "p_lease_seconds": lease_seconds},
+        ).execute()
+        rows = res.data or []
+        return rows[0] if rows else None
+
+    def load_assistant_context(self, question_id: str) -> dict[str, Any] | None:
+        """Fetch the transcript + round/event context for an answer job.
+
+        Returns None if the question is gone. Round prompt / event name are
+        best-effort (None if unavailable) so the answer can still be generated.
+        """
+        qres = (
+            self._c.table("questions")
+            .select("id,transcript,round_id,event_id,status")
+            .eq("id", question_id)
+            .limit(1)
+            .execute()
+        )
+        qrows = qres.data or []
+        if not qrows:
+            return None
+        q = qrows[0]
+        round_prompt: str | None = None
+        if q.get("round_id"):
+            rres = (
+                self._c.table("rounds").select("prompt").eq("id", q["round_id"]).limit(1).execute()
+            )
+            rrows = rres.data or []
+            round_prompt = (rrows[0].get("prompt") if rrows else None) or None
+        event_name: str | None = None
+        if q.get("event_id"):
+            eres = self._c.table("events").select("name").eq("id", q["event_id"]).limit(1).execute()
+            erows = eres.data or []
+            event_name = (erows[0].get("name") if erows else None) or None
+        return {
+            "transcript": q.get("transcript") or "",
+            "round_prompt": round_prompt,
+            "event_name": event_name,
+        }
+
+    def complete_assistant(
+        self,
+        response_id: str,
+        *,
+        text: str,
+        provider: str,
+        model: str | None,
+        processing_ms: int,
+    ) -> None:
+        self._c.table("assistant_responses").update(
+            {
+                "status": "done",
+                "response_text": text,
+                "provider": provider,
+                "model": model,
+                "processing_ms": processing_ms,
+                "safe_error_message": None,
+                "lease_expires_at": None,
+                "completed_at": "now()",
+            }
+        ).eq("id", response_id).execute()
+
+    def requeue_assistant(self, response_id: str) -> None:
+        """Return a job to the queue for another attempt (recoverable failure)."""
+        self._c.table("assistant_responses").update(
+            {"status": "queued", "lease_expires_at": None}
+        ).eq("id", response_id).execute()
+
+    def fail_assistant(self, response_id: str, safe_message: str) -> None:
+        """Mark a job terminally failed with a public-safe message (no internals)."""
+        self._c.table("assistant_responses").update(
+            {
+                "status": "error",
+                "safe_error_message": safe_message or "Assistant response unavailable",
+                "lease_expires_at": None,
+                "completed_at": "now()",
+            }
+        ).eq("id", response_id).execute()
+
     # -- heartbeat ----------------------------------------------------------
     def heartbeat(self, version: str, mode: str, status: str) -> None:
         self._c.table("worker_heartbeats").upsert(

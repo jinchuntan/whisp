@@ -11,6 +11,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from persephone_worker.providers.router import MODE_ORDER
 
+# Chatbot provider selection is independent of TRANSCRIPTION_MODE (transcription
+# and answer generation are decoupled).
+CHATBOT_MODES = frozenset({"disabled", "mock", "ollama", "openai_compatible"})
+
 
 def _default_worker_id() -> str:
     return f"{socket.gethostname()}-{os.getpid()}"
@@ -67,6 +71,27 @@ class WorkerSettings(BaseSettings):
     cluster_similarity_threshold: float = 0.78
     embedding_model: str = "all-MiniLM-L6-v2"
 
+    # --- Chatbot / voice assistant ---
+    # Independent of TRANSCRIPTION_MODE and Agora. 'disabled' does zero chatbot
+    # work and makes zero chatbot network calls. See providers/../chatbot/.
+    #   disabled | mock | ollama | openai_compatible
+    chatbot_mode: str = "disabled"
+    chatbot_auto_generate: bool = True
+    chatbot_model: str = ""
+    chatbot_base_url: str = ""
+    # Secret — worker-only. Never sent to the browser/badge; never logged.
+    chatbot_api_key: str = ""
+    chatbot_timeout_seconds: float = 30.0
+    chatbot_max_output_tokens: int = 180
+    chatbot_temperature: float = 0.3
+    chatbot_max_attempts: int = 3
+    # Answer-loop pacing + lease (kept separate from the transcription loop so a
+    # slow LLM never blocks or extends transcription leases).
+    chatbot_lease_seconds: int = 90
+    chatbot_poll_interval_seconds: float = 1.5
+    chatbot_reconcile_interval_seconds: float = 15.0
+    chatbot_reconcile_limit: int = 50
+
     # --- Loop / lease / heartbeat ---
     worker_id: str = ""
     poll_interval_seconds: float = 1.0
@@ -86,9 +111,21 @@ class WorkerSettings(BaseSettings):
             raise ValueError(f"TRANSCRIPTION_MODE must be one of {sorted(MODE_ORDER)}, got {v!r}")
         return v
 
+    @field_validator("chatbot_mode")
+    @classmethod
+    def _valid_chatbot_mode(cls, v: str) -> str:
+        v = (v or "disabled").strip().lower()
+        if v not in CHATBOT_MODES:
+            raise ValueError(f"CHATBOT_MODE must be one of {sorted(CHATBOT_MODES)}, got {v!r}")
+        return v
+
     @property
     def resolved_worker_id(self) -> str:
         return self.worker_id or _default_worker_id()
+
+    @property
+    def chatbot_enabled(self) -> bool:
+        return self.chatbot_mode != "disabled"
 
     @property
     def uses_agora(self) -> bool:

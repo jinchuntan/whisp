@@ -17,6 +17,9 @@ requirements-dev.txt
 pyproject.toml
 Makefile
 
+# Dev-only frontend unit test (Node) — not part of the served dashboard.
+public/voice.test.mjs
+
 # Never upload local secrets (belt-and-suspenders; .env is gitignored too)
 .env
 .env.*

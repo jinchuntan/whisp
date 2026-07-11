@@ -10,6 +10,9 @@ deployment — it stays running on a local/long-lived machine. The worker:
    (Faster-Whisper and/or Agora, with fallback).
 4. Clusters the transcript by meaning (local embeddings).
 5. Writes results + every provider attempt back to Postgres and sends heartbeats.
+6. **(Optional) Generates a spoken answer** for each transcribed question via a
+   chatbot provider (`CHATBOT_MODE`), as a **separate** async loop so a slow LLM
+   never blocks transcription. Off by default.
 
 Only **outbound** connections are made — no inbound exposure is needed.
 
@@ -115,3 +118,23 @@ job ceiling, publisher-connected-before-STT ordering, and automatic Faster-Whisp
 fallback in `agora_first`. Full details, error codes, and the remaining live-verify
 notes are in [`../docs/AGORA_SETUP.md`](../docs/AGORA_SETUP.md). The full flow runs
 on Faster-Whisper with no Agora setup.
+
+## Voice assistant (optional): spoken answers
+
+The worker can also generate a short answer for each transcribed question and the
+dashboard reads it aloud (browser Web Speech API → Windows Bluetooth speaker).
+This is **independent** of `TRANSCRIPTION_MODE` and uses **no Agora credit**.
+
+```dotenv
+CHATBOT_MODE=ollama          # disabled (default) | mock | ollama | openai_compatible
+CHATBOT_MODEL=llama3.2:3b
+CHATBOT_BASE_URL=http://localhost:11434
+```
+
+- `disabled` (default) does nothing and makes zero chatbot network calls.
+- `mock` gives a deterministic answer with no network — good for a demo/test.
+- `ollama` / `openai_compatible` call a local or hosted model via `httpx`.
+
+Run the migration `supabase/migrations/003_voice_assistant.sql` first. Full setup
+(Ollama install, **Windows-vs-WSL networking**, Bluetooth speaker steps, failure
+behaviour) is in [`../docs/VOICE_ASSISTANT.md`](../docs/VOICE_ASSISTANT.md).

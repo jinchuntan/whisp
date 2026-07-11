@@ -129,6 +129,33 @@ provider, duration, and a **safe** status. Credentials, raw auth headers, and fu
 provider payloads are never logged. Worker heartbeats (`worker_heartbeats`) let the
 dashboard show worker online/offline, mode, version, and last-seen.
 
+### D10 — Voice assistant: worker-side answers + browser speech (see VOICE_ASSISTANT.md)
+A chatbot answers each transcribed question and the host dashboard speaks it aloud
+through the browser's Web Speech API (Windows routes that audio to a paired
+Bluetooth speaker). Design choices mirror the transcription pipeline:
+- **Answer generation runs in the worker, never on Vercel.** The LLM call is slow
+  and belongs off the request path — the API only reads/writes the queue.
+- **Selection is keyed only by `CHATBOT_MODE`** (`disabled | mock | ollama |
+  openai_compatible`), fully independent of `TRANSCRIPTION_MODE`/Agora. `disabled`
+  makes zero chatbot network calls. Providers use `httpx` (no heavy SDK) behind an
+  injectable transport, so tests never touch the network or spend LLM credit.
+- **A second job table, `assistant_responses`** (one row per question, unique
+  `question_id`), with its own atomic `claim_next_assistant_response`
+  (`FOR UPDATE SKIP LOCKED` + lease reclamation) and an **idempotent
+  reconciliation** RPC `enqueue_missing_assistant_responses` — so a worker that
+  dies right after transcription still gets exactly one answer job (crash-safe,
+  not reliant on an in-memory call).
+- **Two independent async loops** in the worker share the queue via
+  `asyncio.gather`, so a slow LLM never blocks or extends a transcription lease. A
+  chatbot failure never changes a question's status — transcription/clustering stay
+  usable. Retry ceiling = `CHATBOT_MAX_ATTEMPTS`; then a public-safe error.
+- **Speech is browser-only.** No cloud TTS, **no Agora credit**, no microphone
+  access. Exactly-once playback: spoken ids in `sessionStorage`, a baseline marks
+  the backlog historical on enable/refresh, and only newly-completed answers are
+  spoken. The dedup/queue logic lives in `public/voice.js` and is unit-tested under
+  Node (`public/voice.test.mjs`). Answers are host-only — the badge poll response
+  is unchanged.
+
 ## Module map
 
 ```
@@ -144,9 +171,10 @@ persephone_api/
   schemas.py       # Pydantic request/response models
   routes/          # health, auth, badge, questions, admin
 worker/persephone_worker/
-  config.py     # worker Settings
-  worker.py     # main loop: heartbeat, claim, transcribe, cluster, cleanup
-  queue.py      # JobQueue: rpc claim, status/result writes, attempts, heartbeat
+  config.py     # worker Settings (transcription + chatbot)
+  worker.py     # transcription loop: heartbeat, claim, transcribe, cluster, cleanup
+  assistant.py  # AssistantProcessor: reconcile → claim → generate → store (2nd loop)
+  queue.py      # JobQueue: rpc claim (questions + assistant_responses), writes
   audio.py      # download, WAV validate/parse, PCM conversion
   clustering.py # Clusterer + EmbeddingModel protocol
   providers/
@@ -154,6 +182,13 @@ worker/persephone_worker/
     router.py       # ProviderRouter, MODE_ORDER
     faster_whisper.py
     agora.py        # AgoraProvider (REST + boundary) + MockAgoraProvider
+  chatbot/
+    base.py         # ChatbotProvider protocol, result, errors, prompt, validation
+    providers.py    # Mock / Ollama / OpenAI-compatible (httpx, injectable transport)
+    __init__.py     # build_chatbot_provider(settings) factory (None when disabled)
+public/
+  voice.js        # UMD speech queue + exactly-once dedup (browser + Node-testable)
+  voice.test.mjs  # node --test unit tests for voice.js
 ```
 
 ## Data flow for one question
