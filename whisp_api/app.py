@@ -3,10 +3,10 @@
 Locally (``uvicorn main:app``) this single process serves BOTH the ``/api/...``
 routes and the static dashboard in ``public/`` (via a StaticFiles mount at "/"),
 so ``make dev`` shows the dashboard at ``/``. On Vercel, ``public/`` is served
-automatically as static assets and a ``vercel.json`` rewrite maps ``/`` to
-``/index.html``; only ``/api/*`` reaches this function, so the StaticFiles mount
-is a local-dev convenience there. Either way, API routers are registered before
-the "/" mount, so ``/api/...`` matches first.
+automatically as static assets (``/index.html``, ``/app.js``, ``/styles.css``),
+but bare ``/`` reaches this function, so a small ``GET /`` route redirects to
+``/index.html``. API routers and the ``/`` route are registered before the "/"
+static mount, so they match first.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from whisp_api import __version__
 from whisp_api.config import get_settings
@@ -61,6 +61,16 @@ def create_app() -> FastAPI:
             status_code=500,
             content={"ok": False, "error": "internal_error", "message": "Internal server error"},
         )
+
+    # Bare "/" reaches this function on Vercel (its static layer only serves
+    # concrete files like /index.html, not the root), so redirect it to the
+    # dashboard entry. Registered BEFORE the static mount so it wins for exactly
+    # "/"; other paths (/app.js, /styles.css) still fall through to the mount
+    # locally, and to Vercel's static layer in production. /index.html is served
+    # statically in both environments, so the redirect resolves.
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse(url="/index.html")
 
     _mount_static(app)
     return app

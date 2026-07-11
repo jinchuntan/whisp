@@ -182,10 +182,12 @@ See `firmware/whisp_badge/README.md` and `docs/HARDWARE.md`. In short:
 
 **Only the FastAPI app + dashboard deploy to Vercel — the worker stays running on
 your local/WSL2 machine.** Vercel auto-detects FastAPI from `requirements.txt`
-(root `main.py` exposes `app`), serves `public/` as static assets, and routes
-`/api/*` to the function. A one-line `vercel.json` rewrite maps bare `/` to
-`/index.html` so the dashboard loads at the root. `.vercelignore` keeps the
-worker, tests, and ML out of the deploy.
+(root `main.py` exposes `app`), serves `public/` as static assets
+(`/index.html`, `/app.js`, `/styles.css`), and routes everything else — including
+bare `/` and `/api/*` — to the function. So the FastAPI app has a small `GET /`
+route that **redirects to `/index.html`** (a `vercel.json` rewrite does *not* work
+— Vercel's FastAPI preset sends `/` to the function regardless). `.vercelignore`
+keeps the worker, tests, and ML out of the deploy. No `vercel.json` is needed.
 
 - **Git integration:** connect the repo in the Vercel dashboard — pushes deploy
   automatically. No build command needed.
@@ -204,8 +206,9 @@ no redeploy of the worker is needed.
 
 > **Local dev vs Vercel:** locally, `make dev` runs one process that serves both
 > the API and the dashboard (FastAPI StaticFiles mounted at `/`, API routers ahead
-> of it). On Vercel, the two are split by `vercel.json`: `public/` is served by
-> Vercel's static layer and only `/api/*` reaches the Python function.
+> of it), so `/` → the mount serves `index.html`. On Vercel, `public/` is served
+> by Vercel's static layer and `/api/*` + bare `/` reach the function; the `GET /`
+> route redirects to the statically-served `/index.html`. Same code, both work.
 
 ---
 

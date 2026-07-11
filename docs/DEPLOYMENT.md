@@ -40,25 +40,24 @@ Vercel **auto-detects FastAPI** from `requirements.txt`; the root `main.py` expo
 
 **How static serving works.** Vercel serves the files in `public/` as static assets
 at their paths automatically (`/styles.css`, `/app.js`, `/index.html`), and routes
-everything else — including `/api/*` — to the FastAPI function. The one gap is the
-bare root `/`, which is not auto-mapped to `index.html` and so falls through to the
-function and returns FastAPI's `Not Found`. `vercel.json` fixes exactly that with a
-single rewrite:
+everything else — including bare `/` **and** `/api/*` — to the FastAPI function.
+The one gap is the root `/`: Vercel's FastAPI preset sends it to the function
+regardless of any `vercel.json` `rewrites`, so it returns FastAPI's `Not Found`.
 
-```json
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/", "destination": "/index.html" }
-  ]
-}
+The deterministic fix lives in the app, not in Vercel config — a tiny redirect
+route (`whisp_api/app.py`):
+
+```python
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/index.html")   # 307 -> statically-served dashboard
 ```
 
-This maps only the exact root `/` to the static `index.html`. All other paths are
-untouched: `/styles.css` and `/app.js` are still served statically, and `/api/*`
-still reaches the Python function. `index.html` references its assets with
-root-relative paths (`/styles.css`, `/app.js`) and the dashboard calls the API at
-`/api/v1/...`, so everything resolves correctly under this scheme.
+`/` → **307** → `/index.html`, which Vercel serves statically. `/styles.css`,
+`/app.js`, and `/api/*` are unaffected. `index.html` references its assets
+root-relatively (`/styles.css`, `/app.js`) and the dashboard calls `/api/v1/...`,
+so everything resolves. Locally the same route redirects to the StaticFiles-served
+`/index.html`. **No `vercel.json` is required.**
 
 - **`.vercelignore`** excludes `worker/`, `firmware/`, `tests/`, `docs/`,
   `supabase/`, `requirements-dev.txt`, `pyproject.toml`, caches, and any local

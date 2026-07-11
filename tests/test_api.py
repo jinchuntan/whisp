@@ -21,6 +21,26 @@ def test_health_does_not_touch_agora_or_db(client, fake_db):
     assert fake_db.badges == {}
 
 
+def test_root_redirects_to_index(client):
+    # Bare "/" must redirect to the statically-served dashboard entry.
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/index.html"
+
+
+def test_root_redirect_resolves_to_dashboard(client):
+    # Following the redirect serves the dashboard (locally via StaticFiles;
+    # on Vercel /index.html is served by the static layer).
+    r = client.get("/", follow_redirects=True)
+    assert r.status_code == 200
+    assert "WHISP" in r.text
+
+
+def test_api_route_still_reachable_after_root_route(client):
+    # Adding GET / must not shadow the API.
+    assert client.get("/api/v1/health").status_code == 200
+
+
 def test_upload_returns_202_and_queues(client, fake_db, fake_storage, badge_headers):
     fake_db.seed_event()
     r = client.post("/api/v1/questions", content=make_wav(), headers=badge_headers)
