@@ -1,6 +1,6 @@
-# Whisp Badge Hardware
+# Persephone Badge Hardware
 
-This document describes the Whisp badge hardware, wiring, and the proven firmware behaviour. For build and flash steps, see [`firmware/whisp_badge/README.md`](../firmware/whisp_badge/README.md).
+This document describes the Persephone badge hardware, wiring, and the proven firmware behaviour. For build and flash steps, see [`firmware/persephone_badge/README.md`](../firmware/persephone_badge/README.md).
 
 ## Microcontroller
 
@@ -90,6 +90,6 @@ After the fix, the canvas is **320x240 landscape**.
 
 ## Firmware Configuration
 
-Build and flash instructions live in [`firmware/whisp_badge/README.md`](../firmware/whisp_badge/README.md).
+Build and flash instructions live in [`firmware/persephone_badge/README.md`](../firmware/persephone_badge/README.md).
 
 Before building, copy `config.example.h` to `config.h`. The `config.h` file is **gitignored** — **never commit Wi-Fi credentials.**

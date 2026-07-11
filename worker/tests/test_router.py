@@ -7,9 +7,15 @@ from pathlib import Path
 
 import pytest
 
+from persephone_worker.providers.base import (
+    AGORA_CREDIT_LIMIT_REACHED,
+    AGORA_LIVE_DISABLED,
+    ProviderError,
+    ProviderTimeout,
+    ProviderUnavailable,
+)
+from persephone_worker.providers.router import AGORA, FASTER_WHISPER, MODE_ORDER, ProviderRouter
 from tests.conftest import FakeProvider
-from whisp_worker.providers.base import ProviderError, ProviderUnavailable
-from whisp_worker.providers.router import AGORA, FASTER_WHISPER, MODE_ORDER, ProviderRouter
 
 DUMMY = Path("dummy.wav")
 
@@ -89,6 +95,25 @@ async def test_agora_first_falls_back_on_empty():
     assert outcome.attempts[0].status == "empty"
 
 
+async def test_agora_first_skip_code_recorded_skipped_and_falls_back():
+    # A "did not run / no credit" code (e.g. live disabled) is SKIPPED, not error.
+    fw = FakeProvider(FASTER_WHISPER, transcript="from-fw")
+    agora = FakeProvider(AGORA, raises=ProviderError("off", code=AGORA_LIVE_DISABLED))
+    outcome = await make_router("agora_first", fw=fw, agora=agora).transcribe(DUMMY, "q")
+    assert outcome.provider_used == FASTER_WHISPER
+    assert outcome.fallback_used is True
+    assert outcome.attempts[0].status == "skipped"
+    assert outcome.attempts[0].safe_error_code == AGORA_LIVE_DISABLED
+
+
+async def test_agora_provider_timeout_recorded_as_timeout_status():
+    fw = FakeProvider(FASTER_WHISPER, transcript="from-fw")
+    agora = FakeProvider(AGORA, raises=ProviderTimeout("join", code="agora_rtc_join_timeout"))
+    outcome = await make_router("agora_first", fw=fw, agora=agora).transcribe(DUMMY, "q")
+    assert outcome.attempts[0].status == "timeout"
+    assert outcome.provider_used == FASTER_WHISPER
+
+
 # --------------------------- faster_whisper_first -------------------------
 async def test_fw_first_uses_fw_when_ok():
     fw = FakeProvider(FASTER_WHISPER, transcript="from-fw")
@@ -125,6 +150,16 @@ async def test_agora_only_success():
     assert outcome.status == "done"
     assert outcome.provider_used == AGORA
     assert outcome.fallback_used is False
+
+
+async def test_agora_only_credit_limit_is_error_no_fallback():
+    fw = FakeProvider(FASTER_WHISPER, transcript="should-not-run")
+    agora = FakeProvider(AGORA, raises=ProviderError("limit", code=AGORA_CREDIT_LIMIT_REACHED))
+    outcome = await make_router("agora_only", fw=fw, agora=agora).transcribe(DUMMY, "q")
+    assert outcome.status == "error"
+    assert outcome.error_code == AGORA_CREDIT_LIMIT_REACHED
+    assert fw.calls == 0
+    assert outcome.attempts[0].status == "skipped"
 
 
 # --------------------------- faster_whisper_only --------------------------

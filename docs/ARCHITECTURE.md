@@ -1,4 +1,4 @@
-# Whisp — Architecture
+# Persephone — Architecture
 
 This document records the major architectural decisions and the reasoning behind
 them. It complements `IMPLEMENTATION_PLAN.md` (scope/phases) and `API.md` (contract).
@@ -8,7 +8,7 @@ them. It complements `IMPLEMENTATION_PLAN.md` (scope/phases) and `API.md` (contr
 ```
  ┌────────────┐   audio/wav (≤4.5MB)   ┌──────────────────────────┐
  │ ESP32-S3   │ ─────────────────────▶ │  Vercel: FastAPI API      │
- │ badge      │   POST /api/v1/questions│  (whisp_api + main.py)   │
+ │ badge      │   POST /api/v1/questions│  (persephone_api + main.py)   │
  │ (firmware) │ ◀───────────────────── │  202 {question_id,poll}   │
  └────────────┘   poll GET /questions/id└─────────┬────────────────┘
         ▲                                          │ insert row (queued)
@@ -17,7 +17,7 @@ them. It complements `IMPLEMENTATION_PLAN.md` (scope/phases) and `API.md` (contr
  ┌────────────┐                        ┌──────────────────────────┐
  │ Host        │ login (cookie session)│  Supabase                 │
  │ dashboard   │ ◀────────────────────▶│  Postgres + Storage       │
- │ (public/)   │  poll admin/state     │  (state + whisp-audio)    │
+ │ (public/)   │  poll admin/state     │  (state + persephone-audio)    │
  └────────────┘                        └─────────┬────────────────┘
                                         claim job │  ▲ write result,
                                   (rpc SKIP LOCKED)▼  │ attempts, clusters
@@ -45,7 +45,7 @@ Benefit: the API is stateless, fast, restart-safe, and Vercel-safe.
 The reference kept state in a Python dict and audio on local disk — neither survives
 a serverless cold start or restart, and Vercel's filesystem is ephemeral (`/tmp`
 only). We use Supabase Postgres for all structured state and a **private**
-`whisp-audio` bucket for WAVs. The browser never queries privileged tables directly;
+`persephone-audio` bucket for WAVs. The browser never queries privileged tables directly;
 it goes through our API. RLS is enabled on every table so anonymous/direct access is
 denied by default; the service_role key (server-only) bypasses RLS intentionally.
 
@@ -89,18 +89,27 @@ runs in the worker. pgvector is documented as an optional future upgrade for
 DB-side nearest-neighbour search. `question_count` is maintained transactionally via
 an RPC. `similar_count` returned to the badge = the cluster's member count.
 
-### D7 — Agora isolated behind a boundary, with an honest mock
-All Agora code lives in `providers/agora.py` (+ helpers). Nothing contacts Agora at
-import time or as a health check. The **REST control-plane** (v7.x `join`/query/
-`leave`, HTTP Basic auth) is implemented against verified endpoints. The **media
-bridge** (pushing PCM into the RTC channel so Agora's bot can hear it) is defined as a
-`MediaBridge` protocol; the real implementation requires the Linux-only
-`agora-python-server-sdk` + real credentials + credit, so it is left as a documented
-boundary rather than fabricated. A deterministic `MockAgoraProvider` powers tests and
-credential-free demos. See `docs/AGORA_SETUP.md` for the exact blocker.
+### D7 — Agora isolated behind a boundary, credit-safe, with a real media bridge
+All Agora code lives in `providers/agora.py` + `agora_bridge.py` + `agora_token.py`
++ `agora_captions.py`. Nothing contacts Agora at import time or as a health check;
+every SDK import is lazy. The **REST control-plane** (`join`/query/`leave`, HTTP
+Basic auth) and the **real media bridge** (`AgoraPcmMediaBridge`: one `AgoraService`
+per process, per-question RTC connection, real-time 10 ms PCM publishing, caption
+collection off the data stream) are both implemented against the installed
+`agora-python-server-sdk`. RTC tokens use a vendored copy of Agora's official
+**AccessToken2** builder. Live RTC/STT is gated behind `AGORA_LIVE_ENABLED`
+(default off) and a daily credit ceiling, joins+connects the publisher **before**
+starting the paid STT task, and defaults to `UnavailableMediaBridge` so no credit is
+ever spent by accident. Tests use fakes only — no native libs, no network, no
+credit. A `MockAgoraProvider` remains for credential-free demos. The one manual,
+credit-spending path is `agora_canary.py`. **Verified live (2026-07-12, SDK
+v4.4.32):** a speech clip transcribed end-to-end via `agora`. The two former
+live-verify items (REST join-body field names, caption field numbers) are confirmed
+and isolated; PCM is pushed as `bytearray` and the `AgoraService` is released before
+exit. See `docs/AGORA_SETUP.md`.
 
 ### D8 — Auth: badge key (headers) + host session (cookies)
-Badge endpoints require `X-Whisp-Key: <BADGE_API_KEY>`, compared with
+Badge endpoints require `X-Persephone-Key: <BADGE_API_KEY>`, compared with
 `hmac.compare_digest` — a header, so CSRF-safe and unchanged. Host/admin endpoints
 require a **server-side Supabase Auth session**: `/api/v1/auth/login` validates
 email/password against Supabase, enforces `ADMIN_EMAIL_ALLOWLIST`, and stores the
@@ -109,7 +118,7 @@ Tokens never reach JavaScript; the access token is refreshed transparently via t
 refresh cookie. State-changing session requests are CSRF-checked against
 `Origin`/`Referer`. A legacy shared `ADMIN_API_KEY` remains available only for
 tests/CLI behind `ALLOW_LEGACY_ADMIN_KEY` (default off). Implemented in
-`whisp_api/auth.py`, `whisp_api/supabase_auth.py`, and `whisp_api/routes/auth.py`;
+`persephone_api/auth.py`, `persephone_api/supabase_auth.py`, and `persephone_api/routes/auth.py`;
 documented in `docs/API.md` and the security section of `README.md`. **Roadmap:**
 per-badge credentials.
 
@@ -123,8 +132,8 @@ dashboard show worker online/offline, mode, version, and last-seen.
 ## Module map
 
 ```
-main.py                       # Vercel entrypoint: `from whisp_api.app import app`
-whisp_api/
+main.py                       # Vercel entrypoint: `from persephone_api.app import app`
+persephone_api/
   app.py           # create_app(): routers, DI, CORS, local static serving
   config.py        # Settings (pydantic-settings) from env
   auth.py          # badge key + host session dependencies, cookies, CSRF
@@ -134,7 +143,7 @@ whisp_api/
   models.py        # enums + domain constants (statuses, modes)
   schemas.py       # Pydantic request/response models
   routes/          # health, auth, badge, questions, admin
-worker/whisp_worker/
+worker/persephone_worker/
   config.py     # worker Settings
   worker.py     # main loop: heartbeat, claim, transcribe, cluster, cleanup
   queue.py      # JobQueue: rpc claim, status/result writes, attempts, heartbeat
@@ -150,9 +159,9 @@ worker/whisp_worker/
 ## Data flow for one question
 
 1. Badge holds button → records 16 kHz mono PCM16 into PSRAM → builds WAV.
-2. `POST /api/v1/questions` (`X-Whisp-Key`, `X-Badge-Id`, optional `X-Round-Id`).
+2. `POST /api/v1/questions` (`X-Persephone-Key`, `X-Badge-Id`, optional `X-Round-Id`).
 3. API validates auth, size, RIFF/WAVE, badge id, round → uploads WAV to
-   `whisp-audio/<badge>/<uuid>.wav` → inserts `questions` row `queued` → `202`.
+   `persephone-audio/<badge>/<uuid>.wav` → inserts `questions` row `queued` → `202`.
 4. Worker `claim_next_question` → `claimed` (lease). Downloads WAV to `/tmp`.
 5. Router runs providers per mode; each attempt logged to `transcription_attempts`.
 6. On success: `questions` → `done` with transcript/provider/fallback/latency.

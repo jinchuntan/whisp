@@ -1,15 +1,15 @@
-# Whisp Deployment Guide
+# Persephone Deployment Guide
 
-A practical guide to deploying Whisp across its three runtime boundaries.
+A practical guide to deploying Persephone across its three runtime boundaries.
 
 > Command blocks are labelled **Windows PowerShell** or **WSL / bash**. Run each in the indicated shell.
 
 ## 1. Overview
 
-Whisp has three runtime boundaries:
+Persephone has three runtime boundaries:
 
 1. **Vercel (web/API + static dashboard)** — the FastAPI app and the host dashboard (`public/`). Serves `/api/...` and the dashboard at `/`.
-2. **Supabase (state + storage)** — Postgres for persistent state and a private Storage bucket (`whisp-audio`) for audio.
+2. **Supabase (state + storage)** — Postgres for persistent state and a private Storage bucket (`persephone-audio`) for audio.
 3. **WSL2 worker** — the transcription worker. Polls Supabase, downloads audio, transcribes, clusters, and heartbeats. It runs outside Vercel.
 
 Badges talk to the system over **HTTP polling** — there is no inbound socket to the badge and no inbound exposure required for the worker.
@@ -17,8 +17,8 @@ Badges talk to the system over **HTTP polling** — there is no inbound socket t
 ## 2. Supabase Setup
 
 1. Create a Supabase project.
-2. Open the **SQL editor** and run `supabase/migrations/001_initial_schema.sql`. This applies the Postgres schema, the `claim_next_question()` RPC, and creates the private `whisp-audio` bucket.
-3. Confirm the private **`whisp-audio`** bucket exists. The migration creates it; if it is missing, create it manually under **Storage** with **Public = OFF**.
+2. Open the **SQL editor** and run `supabase/migrations/001_initial_schema.sql`. This applies the Postgres schema, the `claim_next_question()` RPC, and creates the private `persephone-audio` bucket.
+3. Confirm the private **`persephone-audio`** bucket exists. The migration creates it; if it is missing, create it manually under **Storage** with **Public = OFF**.
 4. **RLS is enabled on all tables**, so only the `service_role` key (used server-side) can read or write data.
 5. Find your credentials under **Project Settings -> API**:
    - `SUPABASE_URL`
@@ -26,7 +26,7 @@ Badges talk to the system over **HTTP polling** — there is no inbound socket t
    - the **anon / public** key (`SUPABASE_ANON_KEY`) — used server-side for host login
 6. **Provision host login.** Under **Authentication -> Users -> Add user**, create
    an email + password for each host and confirm the email. Under
-   **Authentication -> Providers -> Email**, set **Enable sign-ups = OFF** — Whisp
+   **Authentication -> Providers -> Email**, set **Enable sign-ups = OFF** — Persephone
    has no public registration. List each host email in `ADMIN_EMAIL_ALLOWLIST`
    (comma-separated, case-insensitive); only those users can reach host routes.
 
@@ -51,7 +51,7 @@ The one gap is the root `/`: Vercel's FastAPI preset sends it to the function
 regardless of any `vercel.json` `rewrites`, so it returns FastAPI's `Not Found`.
 
 The deterministic fix lives in the app, not in Vercel config — a tiny redirect
-route (`whisp_api/app.py`):
+route (`persephone_api/app.py`):
 
 ```python
 @app.get("/", include_in_schema=False)
@@ -81,7 +81,7 @@ The FastAPI app is serverless-safe by design (verified):
 | --- | --- |
 | Transcription in the request path | **No** — the API only enqueues to Supabase and reads state; the worker transcribes. |
 | Filesystem writes | **None** — audio goes straight to Supabase Storage; nothing is written to disk (`/tmp` unused). |
-| Background threads / tasks / loops | **None** — no `threading`, `create_task`, `BackgroundTasks`, or polling loops in `whisp_api/`. |
+| Background threads / tasks / loops | **None** — no `threading`, `create_task`, `BackgroundTasks`, or polling loops in `persephone_api/`. |
 | Module-level state assuming a long-lived process | **Safe** — only `@lru_cache` singletons (settings + Supabase client), rebuilt per cold start. No in-memory question store. |
 | Secrets | All from `os.environ` (see below); none in code or committed files. |
 
@@ -139,8 +139,8 @@ Web/API variables:
 | `SUPABASE_URL` | yes | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side service_role key (never in browser) |
 | `SUPABASE_ANON_KEY` | yes | Public anon key; used server-side for host login |
-| `SUPABASE_AUDIO_BUCKET` | no | Default `whisp-audio` |
-| `BADGE_API_KEY` | yes | Auth for badge requests (`X-Whisp-Key`) |
+| `SUPABASE_AUDIO_BUCKET` | no | Default `persephone-audio` |
+| `BADGE_API_KEY` | yes | Auth for badge requests (`X-Persephone-Key`) |
 | `ADMIN_EMAIL_ALLOWLIST` | yes | Comma-separated host emails allowed to sign in |
 | `SESSION_COOKIE_SECURE` | prod | `true` in production (HTTPS); `false` for local http |
 | `SESSION_COOKIE_SAMESITE` | no | `lax` (default) or `strict` |
@@ -199,7 +199,14 @@ To change modes:
 2. Optionally update the Vercel `TRANSCRIPTION_MODE` variable so the dashboard displays the correct mode.
 3. **Restart the worker.**
 
-The default `faster_whisper_only` protects Agora credits. For Agora configuration, see [`docs/AGORA_SETUP.md`](AGORA_SETUP.md).
+The default `faster_whisper_only` protects Agora credits. Agora runs **only in the
+WSL2 worker** (never on Vercel). To use it: install the optional SDK
+(`pip install -r worker/requirements-agora.txt`, Linux/WSL2 only), set the Agora
+credentials + `AGORA_LIVE_ENABLED=true` in `worker/.env`, and start the worker via
+`bash worker/scripts/run_worker_agora.sh` (it sets `LD_LIBRARY_PATH`). It is off by
+default, guarded by a daily credit ceiling, and falls back to Faster-Whisper in
+`agora_first`. Turn `AGORA_LIVE_ENABLED=false` after a demo. Full setup, the manual
+canary live-test, and safe error codes are in [`docs/AGORA_SETUP.md`](AGORA_SETUP.md).
 
 ## 9. Retention
 

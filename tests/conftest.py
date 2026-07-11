@@ -11,11 +11,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from whisp_api.app import create_app
-from whisp_api.config import Settings, get_settings
-from whisp_api.database import get_database
-from whisp_api.storage import get_storage
-from whisp_api.supabase_auth import (
+from persephone_api.app import create_app
+from persephone_api.config import Settings, get_settings
+from persephone_api.database import get_database
+from persephone_api.storage import get_storage
+from persephone_api.supabase_auth import (
     AuthSession,
     AuthUnavailable,
     AuthUser,
@@ -383,4 +383,4 @@ def host_client(app) -> TestClient:
 
 @pytest.fixture
 def badge_headers() -> dict[str, str]:
-    return {"X-Whisp-Key": BADGE_KEY, "X-Badge-Id": "badge-001", "Content-Type": "audio/wav"}
+    return {"X-Persephone-Key": BADGE_KEY, "X-Badge-Id": "badge-001", "Content-Type": "audio/wav"}

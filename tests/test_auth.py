@@ -7,6 +7,11 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from persephone_api.app import create_app
+from persephone_api.config import Settings, get_settings
+from persephone_api.database import get_database
+from persephone_api.storage import get_storage
+from persephone_api.supabase_auth import get_auth_client
 from tests.conftest import (
     BADGE_KEY,
     HOST_EMAIL,
@@ -18,11 +23,6 @@ from tests.conftest import (
     FakeStorage,
     make_wav,
 )
-from whisp_api.app import create_app
-from whisp_api.config import Settings, get_settings
-from whisp_api.database import get_database
-from whisp_api.storage import get_storage
-from whisp_api.supabase_auth import get_auth_client
 
 LOGIN = "/api/v1/auth/login"
 ME = "/api/v1/auth/me"
@@ -56,7 +56,9 @@ def test_badge_state_requires_key(client):
 
 def test_badge_state_rejects_wrong_key(client):
     r = client.get(
-        "/api/v1/badge/state", params={"badge_id": "badge-001"}, headers={"X-Whisp-Key": "nope"}
+        "/api/v1/badge/state",
+        params={"badge_id": "badge-001"},
+        headers={"X-Persephone-Key": "nope"},
     )
     assert r.status_code == 401
 
@@ -64,7 +66,43 @@ def test_badge_state_rejects_wrong_key(client):
 def test_badge_state_accepts_valid_key(client, fake_db):
     fake_db.seed_event()
     r = client.get(
-        "/api/v1/badge/state", params={"badge_id": "badge-001"}, headers={"X-Whisp-Key": BADGE_KEY}
+        "/api/v1/badge/state",
+        params={"badge_id": "badge-001"},
+        headers={"X-Persephone-Key": BADGE_KEY},
+    )
+    assert r.status_code == 200
+
+
+def test_badge_state_accepts_deprecated_whisp_header(client, fake_db):
+    # Backward-compat: the old X-Whisp-Key header is still honored for one
+    # migration period so already-deployed badges keep working.
+    fake_db.seed_event()
+    r = client.get(
+        "/api/v1/badge/state",
+        params={"badge_id": "badge-001"},
+        headers={"X-Whisp-Key": BADGE_KEY},
+    )
+    assert r.status_code == 200
+
+
+def test_badge_conflicting_headers_rejected(client, fake_db):
+    # Both headers sent with DIFFERENT values -> ambiguous -> reject (400).
+    fake_db.seed_event()
+    r = client.get(
+        "/api/v1/badge/state",
+        params={"badge_id": "badge-001"},
+        headers={"X-Persephone-Key": BADGE_KEY, "X-Whisp-Key": "different-value"},
+    )
+    assert r.status_code == 400
+
+
+def test_badge_matching_dual_headers_ok(client, fake_db):
+    # Both headers sent with the SAME value -> accepted.
+    fake_db.seed_event()
+    r = client.get(
+        "/api/v1/badge/state",
+        params={"badge_id": "badge-001"},
+        headers={"X-Persephone-Key": BADGE_KEY, "X-Whisp-Key": BADGE_KEY},
     )
     assert r.status_code == 200
 
@@ -105,7 +143,7 @@ def test_login_unauthorized_email(client):
     )
     assert r.status_code == 403
     assert "not authorized" in r.json()["detail"].lower()
-    assert "whisp_at" not in _set_cookie_headers(r)
+    assert "persephone_at" not in _set_cookie_headers(r)
 
 
 def test_login_service_unavailable_is_503(client, test_settings):
@@ -119,7 +157,7 @@ def test_login_sets_httponly_lax_cookies(client):
         LOGIN, json={"email": HOST_EMAIL, "password": HOST_PASSWORD}, headers={"origin": ORIGIN}
     )
     joined = _set_cookie_headers(r)
-    assert "whisp_at=" in joined and "whisp_rt=" in joined
+    assert "persephone_at=" in joined and "persephone_rt=" in joined
     assert "httponly" in joined
     assert "samesite=lax" in joined
     assert "path=/" in joined
@@ -159,12 +197,12 @@ def test_me_authenticated(host_client):
 def test_expired_access_refreshes_via_refresh_cookie(host_client):
     # Access token gone (expired), but the valid refresh cookie should
     # transparently mint a new session.
-    host_client.cookies.delete("whisp_at")
+    host_client.cookies.delete("persephone_at")
     r = host_client.get(ME)
     assert r.status_code == 200
     assert r.json()["authenticated"] is True
     # A fresh access cookie was issued.
-    assert "whisp_at=" in _set_cookie_headers(r)
+    assert "persephone_at=" in _set_cookie_headers(r)
 
 
 def test_logout_clears_cookies_and_revokes(host_client, fake_auth):

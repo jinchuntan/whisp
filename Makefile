@@ -1,4 +1,4 @@
-# Whisp developer commands. Run inside WSL2 / Linux.
+# Persephone developer commands. Run inside WSL2 / Linux.
 # The web/API venv lives in ./.venv ; the worker installs heavy deps separately.
 
 PY ?= .venv/bin/python
@@ -10,7 +10,7 @@ MYPY ?= .venv/bin/mypy
         lint fmt format typecheck check clean deploy-preview deploy
 
 help:
-	@echo "Whisp make targets:"
+	@echo "Persephone make targets:"
 	@echo "  make venv           - create ./.venv"
 	@echo "  make install        - install web/API + dev deps into ./.venv"
 	@echo "  make install-worker - install worker deps (heavy; run in WSL2)"
@@ -21,7 +21,7 @@ help:
 	@echo "  make test-all       - run both test suites"
 	@echo "  make lint           - ruff check"
 	@echo "  make fmt            - ruff format (write)"
-	@echo "  make typecheck      - mypy (whisp_api + main)"
+	@echo "  make typecheck      - mypy (persephone_api + main)"
 	@echo "  make check          - lint + format-check + typecheck + all tests"
 	@echo "  make deploy-preview - deploy a Vercel preview (web/API + dashboard)"
 	@echo "  make deploy         - deploy to Vercel production (web/API + dashboard)"

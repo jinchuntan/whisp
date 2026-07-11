@@ -1,11 +1,11 @@
-# Whisp — Implementation Plan
+# Persephone — Implementation Plan
 
 > Written before implementation per the build brief. Records scope, phase order,
 > and the decisions that require (or explicitly avoid needing) credentials.
 
 ## 1. Goal
 
-Whisp is an anonymous voice Q&A system for conferences. An ESP32-S3 badge records
+Persephone is an anonymous voice Q&A system for conferences. An ESP32-S3 badge records
 a spoken question while a button is held, uploads a WAV over Wi-Fi, and a backend
 transcribes it (Faster-Whisper locally, or Agora Real-Time STT). Similar questions
 are clustered by meaning so a host can see what the room actually thinks.
@@ -14,8 +14,8 @@ are clustered by meaning so a host can see what the room actually thinks.
 
 | Boundary | Runs on | Responsibilities | Heavy deps? |
 |----------|---------|------------------|-------------|
-| **Web/control plane** (`whisp_api/`, `main.py`, `public/`) | Vercel (serverless FastAPI) + CDN static | HTTP API, audio ingest to storage, job creation, polling, admin dashboard | **No** — FastAPI + Supabase client only |
-| **Persistent storage** (`supabase/`) | Supabase | Postgres state + private `whisp-audio` bucket | n/a |
+| **Web/control plane** (`persephone_api/`, `main.py`, `public/`) | Vercel (serverless FastAPI) + CDN static | HTTP API, audio ingest to storage, job creation, polling, admin dashboard | **No** — FastAPI + Supabase client only |
+| **Persistent storage** (`supabase/`) | Supabase | Postgres state + private `persephone-audio` bucket | n/a |
 | **Transcription worker** (`worker/`) | WSL2 Ubuntu (later a Linux container) | Claim jobs, download audio, transcribe, cluster, heartbeat | **Yes** — faster-whisper, sentence-transformers, (optional) Agora SDK |
 
 The worker only makes **outbound** connections (to Supabase + provider APIs), so it

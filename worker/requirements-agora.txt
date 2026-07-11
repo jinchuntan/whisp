@@ -1,0 +1,22 @@
+# ============================================================================
+# OPTIONAL Agora media bridge dependency (Linux/glibc ONLY).
+#
+# The base worker (requirements.txt) runs Faster-Whisper with NO Agora. Install
+# this ONLY when you want live Agora Real-Time STT, in the worker's WSL2/Linux
+# venv:
+#
+#     pip install -r requirements-agora.txt
+#
+# Then, before running the worker or canary, point LD_LIBRARY_PATH at the SDK's
+# bundled native libs (the helper does this for you):
+#
+#     bash scripts/run_worker_agora.sh                 # worker
+#     bash scripts/run_worker_agora.sh -m persephone_worker.agora_canary --wav a.wav --live
+#
+# and set AGORA_LIVE_ENABLED=true in worker/.env. Windows is NOT supported by the
+# native SDK — use WSL2 Ubuntu. Never install this on Vercel. See
+# ../docs/AGORA_SETUP.md.
+#
+# Note: Persephone's caption decoder is pure-Python (no protobuf dependency needed).
+# ============================================================================
+agora-python-server-sdk>=2.4.9,<3.0

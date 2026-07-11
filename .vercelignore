@@ -1,4 +1,4 @@
-# What NOT to upload to Vercel. The function needs only main.py + whisp_api/ +
+# What NOT to upload to Vercel. The function needs only main.py + persephone_api/ +
 # requirements.txt + vercel.json; the dashboard needs public/. Everything else is
 # excluded to keep deploys lean and to guarantee the heavy worker never ships.
 

@@ -8,11 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from persephone_worker.clustering import Clusterer
+from persephone_worker.config import WorkerSettings
+from persephone_worker.providers.router import AGORA, FASTER_WHISPER
+from persephone_worker.worker import Worker
 from tests.conftest import FakeEmbedder, FakeProvider
-from whisp_worker.clustering import Clusterer
-from whisp_worker.config import WorkerSettings
-from whisp_worker.providers.router import AGORA, FASTER_WHISPER
-from whisp_worker.worker import Worker
 
 
 class FakeQueue:
@@ -62,6 +62,9 @@ class FakeQueue:
         self.added.append((cluster_id, qid, similarity))
         return len(self.added)
 
+    def count_agora_jobs_today(self) -> int:
+        return 0
+
 
 def fw_only_settings(**kw) -> WorkerSettings:
     base = {"transcription_mode": "faster_whisper_only", "enable_clustering": True}
@@ -107,7 +110,7 @@ async def test_process_one_empty():
 
 
 async def test_process_one_error_records_attempt():
-    from whisp_worker.providers.base import ProviderError
+    from persephone_worker.providers.base import ProviderError
 
     job = {"id": "q3", "round_id": None, "audio_storage_path": "b/q3.wav", "badge_id": "b1"}
     w, q = make_worker(job, FakeProvider(FASTER_WHISPER, raises=ProviderError("boom")))

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from whisp_worker.audio import AudioError, iter_pcm_frames, read_wav_pcm16_mono
+from persephone_worker.audio import (
+    AudioError,
+    iter_pcm_frames,
+    pcm_duration_seconds,
+    read_wav_pcm16_mono,
+)
 
 
 def test_read_wav_mono_16k(wav_file):
@@ -41,3 +46,10 @@ def test_iter_pcm_frames_pads_last_frame():
     assert len(frames) == 1
     assert len(frames[0]) == 320  # zero-padded
     assert frames[0].endswith(b"\x00")
+
+
+def test_pcm_duration_seconds():
+    one_second = b"\x00\x00" * 16000  # 16 kHz mono 16-bit
+    assert pcm_duration_seconds(one_second, 16000) == 1.0
+    assert pcm_duration_seconds(b"", 16000) == 0.0
+    assert pcm_duration_seconds(one_second, 0) == 0.0  # guard against /0

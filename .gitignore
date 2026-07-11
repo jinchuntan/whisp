@@ -5,7 +5,7 @@
 worker/.env
 worker/.env.*
 !worker/.env.example
-firmware/whisp_badge/config.h
+firmware/persephone_badge/config.h
 *.pem
 *.key
 secrets.*
@@ -42,6 +42,13 @@ tmp/
 *.wav
 !tests/**/fixtures/*.wav
 !worker/tests/**/fixtures/*.wav
+
+# ---- Agora native SDK runtime artifacts (regenerated on each live run) ----
+agora_cache.db
+agoradns.dat
+agorareport.dat
+agorasdk.log
+agora_rtc_log/
 
 # ---- Vercel ----
 .vercel/

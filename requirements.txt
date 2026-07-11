@@ -1,5 +1,5 @@
 # ============================================================================
-# Whisp WEB/API dependencies (Vercel deployment + API test suite).
+# Persephone WEB/API dependencies (Vercel deployment + API test suite).
 #
 # LIGHTWEIGHT ONLY. Do NOT add faster-whisper, torch, sentence-transformers,
 # numpy, or any Agora media SDK here — those belong in worker/requirements.txt

@@ -1,7 +1,7 @@
 [project]
-name = "whisp"
+name = "persephone"
 version = "0.1.0"
-description = "Whisp — anonymous voice Q&A for conferences (web/API control plane)"
+description = "Persephone — anonymous voice Q&A for conferences (web/API control plane)"
 requires-python = ">=3.10"
 # Runtime dependencies are declared in requirements.txt (authoritative for Vercel).
 # Kept empty here so tooling/pyproject does not pull heavy or duplicate deps.
@@ -18,7 +18,7 @@ dev = [
 [tool.setuptools]
 # This repo is run in-place (Vercel imports `main:app`); no build/packaging needed.
 py-modules = ["main"]
-packages = ["whisp_api", "whisp_api.routes"]
+packages = ["persephone_api", "persephone_api.routes"]
 
 # ---------------------------------------------------------------------------
 # Ruff — lint + format for the whole repo (API + worker + tests).
@@ -36,7 +36,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["whisp_api", "whisp_worker", "main", "tests"]
+known-first-party = ["persephone_api", "persephone_worker", "main", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]
@@ -61,7 +61,7 @@ warn_unused_ignores = false
 warn_redundant_casts = true
 ignore_missing_imports = true
 no_implicit_optional = true
-files = ["whisp_api", "main.py"]
+files = ["persephone_api", "main.py"]
 
 [[tool.mypy.overrides]]
 module = ["supabase.*", "gotrue.*", "storage3.*", "postgrest.*"]

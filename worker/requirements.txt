@@ -1,5 +1,5 @@
 # ============================================================================
-# Whisp WORKER dependencies (WSL2 / Linux ONLY — never installed on Vercel).
+# Persephone WORKER dependencies (WSL2 / Linux ONLY — never installed on Vercel).
 # ============================================================================
 supabase>=2.6,<3.0
 httpx>=0.27,<0.29
@@ -13,7 +13,8 @@ faster-whisper>=1.0,<2.0
 # Semantic clustering (local embeddings; pulls torch + numpy transitively).
 sentence-transformers>=2.7,<4.0
 
-# --- Agora (OPTIONAL, Linux/glibc only). Uncomment to enable the media bridge.
-#     Requires real Agora credentials + credit; see docs/AGORA_SETUP.md.
-#     Windows is NOT supported — use WSL2 Ubuntu.
-# agora-python-server-sdk>=2.4,<3.0
+# --- Agora (OPTIONAL, Linux/glibc only). NOT installed here by default.
+#     To enable the real media bridge, install the separate optional file:
+#         pip install -r requirements-agora.txt
+#     Requires real Agora credentials + credit and AGORA_LIVE_ENABLED=true.
+#     Windows is NOT supported — use WSL2 Ubuntu. See docs/AGORA_SETUP.md.

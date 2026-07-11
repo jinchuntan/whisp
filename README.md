@@ -1,4 +1,4 @@
-# Whisp 🎙️
+# Persephone 🎙️
 
 **Anonymous voice Q&A for conferences.** Lean into a lanyard badge, speak quietly,
 and your question appears anonymously on the speaker's screen — no raised hand, no
@@ -6,7 +6,7 @@ mic runner, no interruption. Similar questions are clustered by meaning so the h
 sees what the room actually thinks, and your badge tells you when others asked the
 same thing.
 
-> Everyone has an opinion. Nobody asks. Whisp gives the room a voice.
+> Everyone has an opinion. Nobody asks. Persephone gives the room a voice.
 
 ---
 
@@ -35,12 +35,12 @@ Read `docs/ARCHITECTURE.md` for the design and `docs/API.md` for the contract.
 ## Repository layout
 
 ```
-main.py                 Vercel/FastAPI entrypoint (from whisp_api.app import app)
-whisp_api/              FastAPI app: routes (/api/v1), auth, DB + storage gateways
+main.py                 Vercel/FastAPI entrypoint (from persephone_api.app import app)
+persephone_api/              FastAPI app: routes (/api/v1), auth, DB + storage gateways
 public/                 Host dashboard (index.html, app.js, styles.css)
 worker/                 WSL2 transcription worker (faster-whisper / Agora / clustering)
 supabase/migrations/    Postgres schema + atomic job-claim RPC + private bucket
-firmware/whisp_badge/   ESP32-S3 Arduino sketch (proven pins + display fix)
+firmware/persephone_badge/   ESP32-S3 Arduino sketch (proven pins + display fix)
 tests/                  API + contract tests (44)      worker/tests/  worker tests (49)
 docs/                   ARCHITECTURE, API, AGORA_SETUP, DEPLOYMENT, HARDWARE, PLAN
 ```
@@ -69,13 +69,15 @@ Everything below runs inside **WSL2** unless it says PowerShell.
 ## 1) Set up Supabase
 
 1. Create a project at <https://supabase.com>.
-2. Open **SQL Editor** and run the contents of
-   `supabase/migrations/001_initial_schema.sql`. This creates the tables, the
-   atomic `claim_next_question()` job-claim function, enables RLS on every table,
-   and creates the private **`whisp-audio`** bucket.
-3. Confirm **Storage → whisp-audio** exists and is **not public**. (If your project
+2. Open **SQL Editor** and run **every file in `supabase/migrations/` in order**:
+   `001_initial_schema.sql` (tables, the atomic `claim_next_question()` job-claim
+   function, RLS on every table) then `002_rebrand_persephone.sql` (creates the
+   private **`persephone-audio`** bucket; non-destructive). `001` also creates the
+   historical `whisp-audio` bucket — that is expected and left in place. Upgrading
+   an existing project? See [`docs/REBRAND_MIGRATION.md`](docs/REBRAND_MIGRATION.md).
+3. Confirm **Storage → persephone-audio** exists and is **not public**. (If your project
    blocks `storage.buckets` inserts, create it manually: Storage → New bucket →
-   name `whisp-audio`, Public = **OFF**.)
+   name `persephone-audio`, Public = **OFF**.)
 4. Copy **Project Settings → API**: the **Project URL** (`SUPABASE_URL`), the
    **service_role** key (`SUPABASE_SERVICE_ROLE_KEY`), and the **anon / public**
    key (`SUPABASE_ANON_KEY`). The service_role key bypasses RLS — keep it
@@ -83,7 +85,7 @@ Everything below runs inside **WSL2** unless it says PowerShell.
    design and is used only server-side for host login (see step 5).
 5. **Create your host login.** Open **Authentication → Users → Add user** and add
    an email + password for yourself (confirm the email). Then, under
-   **Authentication → Providers → Email**, turn **Enable sign-ups OFF** — Whisp
+   **Authentication → Providers → Email**, turn **Enable sign-ups OFF** — Persephone
    has no public registration; hosts are provisioned here by hand. You'll list
    this email in `ADMIN_EMAIL_ALLOWLIST` below so only it can reach host routes.
 
@@ -169,11 +171,11 @@ PY
 
 BASE=http://localhost:8000
 curl -s -X POST "$BASE/api/v1/questions" \
-  -H "Content-Type: audio/wav" -H "X-Whisp-Key: $BADGE_API_KEY" \
+  -H "Content-Type: audio/wav" -H "X-Persephone-Key: $BADGE_API_KEY" \
   -H "X-Badge-Id: badge-001" --data-binary @sample.wav
 # -> {"ok":true,"question_id":"...","status":"queued","poll_url":"/api/v1/questions/..."}
 
-curl -s -H "X-Whisp-Key: $BADGE_API_KEY" "$BASE/api/v1/questions/<question_id>"
+curl -s -H "X-Persephone-Key: $BADGE_API_KEY" "$BASE/api/v1/questions/<question_id>"
 ```
 Watch the worker log the claim → transcription → cluster steps, then see the
 question on the dashboard. (Silence yields `status: "empty"` — record real speech
@@ -181,15 +183,15 @@ to get a transcript.)
 
 ## 6) Flash the ESP32 badge
 
-See `firmware/whisp_badge/README.md` and `docs/HARDWARE.md`. In short:
+See `firmware/persephone_badge/README.md` and `docs/HARDWARE.md`. In short:
 
-1. `cp firmware/whisp_badge/config.example.h firmware/whisp_badge/config.h`
+1. `cp firmware/persephone_badge/config.example.h firmware/persephone_badge/config.h`
    (gitignored — never commit Wi-Fi/API keys).
 2. Set `WIFI_SSID`, `WIFI_PASSWORD` (2.4 GHz), `API_BASE_URL`, `BADGE_API_KEY`,
    `BADGE_ID`.
    - Local (Windows Mobile Hotspot): `http://192.168.137.1:8000`
    - Vercel: `https://your-project.vercel.app`
-3. Open `whisp_badge.ino` in Arduino IDE with the board settings in
+3. Open `persephone_badge.ino` in Arduino IDE with the board settings in
    `docs/HARDWARE.md`, install Adafruit GFX + ILI9341, and upload.
 
 ## 7) Deploy the web/API to Vercel
@@ -243,9 +245,13 @@ Vercel/`.env` var), then restart the worker:
 | `agora_first` | Agora, fall back to Faster-Whisper. Shows a credit warning. |
 | `agora_only` | Agora only, no fallback. |
 
-Switching modes needs no code changes. Agora requires extra setup and has a
-documented external blocker — see `docs/AGORA_SETUP.md`. A developer with **no
-Agora credentials** can run the entire flow on Faster-Whisper.
+Switching modes needs no code changes. A developer with **no Agora credentials**
+can run the entire flow on Faster-Whisper. Agora is a real, credit-safe provider
+that runs only in the WSL2 worker: it publishes badge PCM into an RTC channel via
+`agora-python-server-sdk` and reads back captions. It never runs unless you install
+the optional SDK, set `AGORA_LIVE_ENABLED=true`, and it stays off by default. Full
+setup, the manual **canary** live-test, and safety details are in
+`docs/AGORA_SETUP.md`.
 
 ## Developer commands (WSL2)
 
@@ -255,7 +261,7 @@ make test-worker   # worker tests (49) — no heavy deps needed
 make check         # ruff + format-check + mypy + both suites
 make lint          # ruff check
 make fmt           # ruff format
-make typecheck     # mypy (whisp_api + main)
+make typecheck     # mypy (persephone_api + main)
 ```
 Tests never contact Agora/Supabase, download a model, or need the ESP32 (fakes +
 dependency injection throughout).
@@ -268,7 +274,7 @@ dependency injection throughout).
   host routes; there is no public sign-up. State-changing requests are CSRF-checked
   by Origin/Referer. The legacy shared `ADMIN_API_KEY` is off by default and used
   only for tests/CLI when `ALLOW_LEGACY_ADMIN_KEY=true`.
-- **Badge auth:** shared `X-Whisp-Key` (`BADGE_API_KEY`), constant-time compared —
+- **Badge auth:** shared `X-Persephone-Key` (`BADGE_API_KEY`), constant-time compared —
   unchanged. **Production roadmap:** per-badge credentials.
 - Audio is stored in a **private** bucket; RLS denies anonymous DB access; the
   browser only calls our API with `credentials: "include"`. The service_role key
@@ -297,7 +303,9 @@ dependency injection throughout).
 
 - 🔧 A Supabase project + the SQL migration (state/audio).
 - 🔧 `BADGE_API_KEY` / `ADMIN_API_KEY` you generate.
-- 🔧 Wi-Fi credentials in `firmware/whisp_badge/config.h`.
-- 🔌 **Agora (optional):** requires real credentials, credit, and a Linux-only
-  media SDK — the app **does not pretend Agora works** without them. See
+- 🔧 Wi-Fi credentials in `firmware/persephone_badge/config.h`.
+- 🔌 **Agora (optional):** requires real credentials + credit and the Linux-only
+  `agora-python-server-sdk` (install `worker/requirements-agora.txt`, run via
+  `worker/scripts/run_worker_agora.sh`, set `AGORA_LIVE_ENABLED=true`). Off by
+  default; guarded by a daily credit ceiling and a manual **canary** live-test. See
   `docs/AGORA_SETUP.md`. Faster-Whisper covers the full flow without it.

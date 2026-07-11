@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from whisp_worker.providers.base import (
+from persephone_worker.providers.base import (
     EmptyTranscript,
     ProviderError,
     TranscriptionResult,

@@ -1,4 +1,4 @@
-"""Entry point for the Whisp transcription worker.
+"""Entry point for the Persephone transcription worker.
 
 Run from the ``worker/`` directory inside WSL2:
 
@@ -14,9 +14,9 @@ import asyncio
 import logging
 import sys
 
-from whisp_worker.config import WorkerSettings, get_worker_settings
-from whisp_worker.queue import JobQueue
-from whisp_worker.worker import Worker
+from persephone_worker.config import WorkerSettings, get_worker_settings
+from persephone_worker.queue import JobQueue
+from persephone_worker.worker import Worker
 
 
 def build_client(settings: WorkerSettings):  # type: ignore[no-untyped-def]
@@ -43,6 +43,8 @@ def main() -> None:
         asyncio.run(worker.run_forever())
     except KeyboardInterrupt:
         print("\nworker stopped", file=sys.stderr)
+    finally:
+        worker.shutdown()  # release the Agora service once, if it was initialized
 
 
 if __name__ == "__main__":

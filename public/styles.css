@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Whisp Host Console — dark editorial event system (AABW-inspired)
+   Persephone Host Console — dark editorial event system (AABW-inspired)
    ========================================================================== */
 :root {
   /* Foundation */
@@ -78,8 +78,11 @@ a { color: var(--cyan); }
 .wordmark {
   font-family: var(--display);
   font-weight: 700;
-  letter-spacing: 0.22em;
+  /* Tightened from 0.22em so the longer PERSEPHONE wordmark fits the topbar,
+     login mark, and profile area without overflow. */
+  letter-spacing: 0.14em;
   color: var(--white);
+  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -179,7 +182,8 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .hero-inner { position: relative; padding: clamp(28px, 6vw, 72px); max-width: 640px; }
 .eyebrow { margin: 0 0 20px; color: var(--cyan); }
-.wordmark-xl { font-size: clamp(40px, 7vw, 76px); letter-spacing: 0.16em; line-height: 1; }
+/* Hero wordmark sized so the 10-char PERSEPHONE fits from 390px to desktop. */
+.wordmark-xl { font-size: clamp(32px, 6vw, 58px); letter-spacing: 0.1em; line-height: 1; max-width: 100%; }
 .hero-statement {
   font-size: clamp(30px, 5vw, 58px); line-height: 0.98; margin: 18px 0 22px;
   text-transform: uppercase; letter-spacing: -0.02em;

@@ -7,8 +7,8 @@ import struct
 
 import pytest
 
+from persephone_api.wav import WavValidationError, parse_wav
 from tests.conftest import make_wav
-from whisp_api.wav import WavValidationError, parse_wav
 
 
 # --------------------------- WAV validation -------------------------------
@@ -62,7 +62,7 @@ def _put_question(fake_db, **overrides):
     return q
 
 
-BADGE = {"X-Whisp-Key": "test-badge-key"}
+BADGE = {"X-Persephone-Key": "test-badge-key"}
 
 
 def test_poll_queued(client, fake_db):
@@ -153,7 +153,7 @@ def test_upload_response_contract(client, fake_db):
     r = client.post(
         "/api/v1/questions",
         content=make_wav(),
-        headers={"X-Whisp-Key": "test-badge-key", "X-Badge-Id": "badge-001"},
+        headers={"X-Persephone-Key": "test-badge-key", "X-Badge-Id": "badge-001"},
     )
     assert r.status_code == 202
     body = r.json()

@@ -10,7 +10,7 @@ def test_health(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["service"] == "whisp-api"
+    assert body["service"] == "persephone-api"
     assert body["supabase_configured"] is False
 
 
@@ -33,7 +33,7 @@ def test_root_redirect_resolves_to_dashboard(client):
     # on Vercel /index.html is served by the static layer).
     r = client.get("/", follow_redirects=True)
     assert r.status_code == 200
-    assert "WHISP" in r.text
+    assert "PERSEPHONE" in r.text
 
 
 def test_api_route_still_reachable_after_root_route(client):
@@ -86,7 +86,7 @@ def test_upload_rejects_oversized(client, fake_db, badge_headers):
 
 def test_upload_rejects_bad_badge_id(client, fake_db):
     fake_db.seed_event()
-    headers = {"X-Whisp-Key": "test-badge-key", "X-Badge-Id": "bad id!"}
+    headers = {"X-Persephone-Key": "test-badge-key", "X-Badge-Id": "bad id!"}
     r = client.post("/api/v1/questions", content=make_wav(), headers=headers)
     assert r.status_code == 400
 
@@ -105,7 +105,7 @@ def test_badge_state_reports_round(client, fake_db):
     r = client.get(
         "/api/v1/badge/state",
         params={"badge_id": "badge-001"},
-        headers={"X-Whisp-Key": "test-badge-key"},
+        headers={"X-Persephone-Key": "test-badge-key"},
     )
     body = r.json()
     assert body["event_name"] == "Conf"
@@ -129,7 +129,7 @@ def test_badge_state_notifications(client, fake_db):
     r = client.get(
         "/api/v1/badge/state",
         params={"badge_id": "badge-001"},
-        headers={"X-Whisp-Key": "test-badge-key"},
+        headers={"X-Persephone-Key": "test-badge-key"},
     )
     notes = r.json()["notifications"]
     assert len(notes) == 1

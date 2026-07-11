@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from persephone_worker.providers.base import AttemptRecord, TranscriptionResult
+from persephone_worker.queue import JobQueue
 from tests.conftest import FakeSupabaseClient
-from whisp_worker.providers.base import AttemptRecord, TranscriptionResult
-from whisp_worker.queue import JobQueue
 
 
 def make_queue():
     client = FakeSupabaseClient()
-    return JobQueue(client, "whisp-audio", "worker-test"), client
+    return JobQueue(client, "persephone-audio", "worker-test"), client
 
 
 def test_claim_calls_rpc_with_params_and_returns_row():

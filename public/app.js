@@ -1,4 +1,4 @@
-/* Whisp Host Console — vanilla JS.
+/* Persephone Host Console — vanilla JS.
  *
  * Security / engineering rules honoured here:
  *   - No admin API key, no tokens, nothing sensitive in JS or storage. The

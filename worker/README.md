@@ -1,4 +1,4 @@
-# Whisp Transcription Worker
+# Persephone Transcription Worker
 
 Runs in **WSL2 Ubuntu** (or any Linux host). It is **not** part of the Vercel
 deployment — it stays running on a local/long-lived machine. The worker:
@@ -91,11 +91,27 @@ cd worker && ../.venv/bin/python -m pytest -q
 ```
 
 Optional manual integration tests (real model / real Supabase) are gated behind
-`WHISP_RUN_INTEGRATION=1` — see `tests/test_integration.py`.
+`PERSEPHONE_RUN_INTEGRATION=1` — see `tests/test_integration.py`.
 
-## Agora
+## Agora (optional, credit-safe)
 
-Agora is optional and off by default. It requires real credentials, credit, and a
-Linux-only media SDK, and has a documented external blocker — see
-[`../docs/AGORA_SETUP.md`](../docs/AGORA_SETUP.md). The full flow runs on
-Faster-Whisper with no Agora setup.
+Agora is a real Real-Time STT provider that runs **only here in the worker** — it
+publishes badge PCM into an RTC channel via the Linux-only `agora-python-server-sdk`
+and reads captions back. It is **off by default** and never spends credit unless you
+opt in.
+
+```bash
+# 1) install the optional SDK (Linux/WSL2 only)
+pip install -r requirements-agora.txt
+# 2) set credentials + AGORA_LIVE_ENABLED=true in worker/.env
+# 3) run the worker with LD_LIBRARY_PATH set (helper derives it — nothing hardcoded)
+bash scripts/run_worker_agora.sh
+# 4) manual live-test before a demo (you type "SPEND AGORA CREDIT"):
+bash scripts/run_worker_agora.sh -m persephone_worker.agora_canary --wav sample.wav --live --max-seconds 3
+```
+
+Credit safeguards: hard `AGORA_LIVE_ENABLED` switch, per-job duration cap, per-day
+job ceiling, publisher-connected-before-STT ordering, and automatic Faster-Whisper
+fallback in `agora_first`. Full details, error codes, and the remaining live-verify
+notes are in [`../docs/AGORA_SETUP.md`](../docs/AGORA_SETUP.md). The full flow runs
+on Faster-Whisper with no Agora setup.

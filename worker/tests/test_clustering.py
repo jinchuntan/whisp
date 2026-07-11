@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from persephone_worker.clustering import ClusterCandidate, Clusterer, cosine_similarity
 from tests.conftest import FakeEmbedder
-from whisp_worker.clustering import ClusterCandidate, Clusterer, cosine_similarity
 
 
 def test_cosine_identical():

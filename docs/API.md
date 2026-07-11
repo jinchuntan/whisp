@@ -1,4 +1,4 @@
-# Whisp API (v1)
+# Persephone API (v1)
 
 Base path: `/api/v1`. All examples assume the API runs at `$BASE`
 (e.g. `http://localhost:8000` locally, or `https://your-project.vercel.app`).
@@ -7,7 +7,7 @@ Base path: `/api/v1`. All examples assume the API runs at `$BASE`
 
 | Caller | Mechanism | Secret |
 |--------|-----------|--------|
-| Badge  | `X-Whisp-Key: <BADGE_API_KEY>` header | shared badge key, constant-time compared |
+| Badge  | `X-Persephone-Key: <BADGE_API_KEY>` header | shared badge key, constant-time compared |
 | Host (dashboard) | HttpOnly session cookies from `POST /auth/login` | Supabase email/password + `ADMIN_EMAIL_ALLOWLIST` |
 | Host (legacy) | `Authorization: Bearer <ADMIN_API_KEY>` | off by default (`ALLOW_LEGACY_ADMIN_KEY`); tests/CLI only |
 
@@ -28,8 +28,8 @@ secrets, passwords, and tokens are never exposed or logged.
 ## Auth endpoints
 
 ### `POST /api/v1/auth/login`  → `200`
-Body `{ "email": "...", "password": "..." }`. On success sets `whisp_at` /
-`whisp_rt` HttpOnly cookies and returns `{ "authenticated": true, "email": "..." }`.
+Body `{ "email": "...", "password": "..." }`. On success sets `persephone_at` /
+`persephone_rt` HttpOnly cookies and returns `{ "authenticated": true, "email": "..." }`.
 `401` for wrong credentials, `403` if the email is not on the allowlist (no cookies
 set), `503` if login is not configured / Supabase is unreachable.
 
@@ -58,7 +58,7 @@ curl $BASE/api/v1/health
 ```json
 {
   "status": "ok",
-  "service": "whisp-api",
+  "service": "persephone-api",
   "version": "0.1.0",
   "time": "2026-07-11T12:00:00Z",
   "supabase_configured": true
@@ -70,11 +70,11 @@ curl $BASE/api/v1/health
 ## Badge endpoints
 
 ### `GET /api/v1/badge/state?badge_id=badge-001`
-Header: `X-Whisp-Key`. Returns the active event/round and any "similar question"
+Header: `X-Persephone-Key`. Returns the active event/round and any "similar question"
 notifications for this badge; also updates the badge's `last_seen_at`.
 
 ```bash
-curl -H "X-Whisp-Key: $BADGE_API_KEY" \
+curl -H "X-Persephone-Key: $BADGE_API_KEY" \
      "$BASE/api/v1/badge/state?badge_id=badge-001"
 ```
 ```json
@@ -93,7 +93,7 @@ curl -H "X-Whisp-Key: $BADGE_API_KEY" \
 ```
 
 ### `POST /api/v1/questions`
-Headers: `Content-Type: audio/wav`, `X-Whisp-Key`, `X-Badge-Id`, optional
+Headers: `Content-Type: audio/wav`, `X-Persephone-Key`, `X-Badge-Id`, optional
 `X-Round-Id`. Body: raw standard PCM16 mono WAV bytes (≤ `MAX_AUDIO_BYTES`,
 default 4 MB — under Vercel's 4.5 MB limit).
 
@@ -104,7 +104,7 @@ returns **202** immediately (no transcription in-request).
 ```bash
 curl -X POST "$BASE/api/v1/questions" \
   -H "Content-Type: audio/wav" \
-  -H "X-Whisp-Key: $BADGE_API_KEY" \
+  -H "X-Persephone-Key: $BADGE_API_KEY" \
   -H "X-Badge-Id: badge-001" \
   --data-binary @sample.wav
 ```
@@ -117,7 +117,7 @@ Error statuses: `400` (bad WAV / badge-id / closed round), `401` (bad key),
 `413` (too large), `502` (storage failure).
 
 ### `GET /api/v1/questions/{question_id}`
-Header: `X-Whisp-Key`. Poll for the result. One of:
+Header: `X-Persephone-Key`. Poll for the result. One of:
 
 ```json
 { "question_id": "...", "status": "queued" }
@@ -150,7 +150,7 @@ Header: `X-Whisp-Key`. Poll for the result. One of:
 
 ## Admin endpoints
 
-All require a host session (the `whisp_at`/`whisp_rt` cookies from `/auth/login`).
+All require a host session (the `persephone_at`/`persephone_rt` cookies from `/auth/login`).
 State-changing calls also require a matching `Origin`/`Referer` (CSRF). The `curl`
 examples below use `-b cookies.txt` after logging in with
 `curl -c cookies.txt -X POST "$BASE/api/v1/auth/login" -H 'Content-Type: application/json' -d '{"email":"...","password":"..."}'`.
