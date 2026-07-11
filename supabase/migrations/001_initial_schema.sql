@@ -262,3 +262,28 @@ alter table public.worker_heartbeats      enable row level security;
 insert into storage.buckets (id, name, public)
 values ('whisp-audio', 'whisp-audio', false)
 on conflict (id) do nothing;
+
+-- ===========================================================================
+-- service_role grants
+-- The trusted server/worker uses the SERVICE_ROLE key. In most Supabase
+-- projects service_role already has these privileges (and bypasses RLS), but we
+-- grant them explicitly so a fresh project — or one with tightened defaults —
+-- works out of the box. GRANTs are idempotent (re-running is a no-op).
+-- ===========================================================================
+grant usage on schema public to service_role;
+
+grant select, insert, update, delete on table
+    public.events,
+    public.rounds,
+    public.badges,
+    public.questions,
+    public.transcription_attempts,
+    public.clusters,
+    public.cluster_members,
+    public.worker_heartbeats
+to service_role;
+
+grant execute on function public.claim_next_question(text, integer) to service_role;
+grant execute on function
+    public.add_question_to_cluster(uuid, uuid, double precision, double precision[])
+to service_role;

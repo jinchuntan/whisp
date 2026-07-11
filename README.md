@@ -114,14 +114,25 @@ The worker holds the heavy ML deps and runs separately from the API.
 ```bash
 cd worker
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt        # faster-whisper + sentence-transformers (large)
+python -m pip install --upgrade pip
+
+# CPU-only machines: install the CPU PyTorch wheel FIRST to avoid multi-GB CUDA
+# downloads pulled in by faster-whisper / sentence-transformers.
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+pip install -r requirements.txt        # faster-whisper + sentence-transformers
 cp .env.example .env                    # set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 python run_worker.py
 ```
-The **first run downloads** the Faster-Whisper `base` model and the
-`all-MiniLM-L6-v2` embedding model into the Hugging Face cache
-(`~/.cache/huggingface`) — these are **not** committed to git. Startup logs the
-model-loading status and the active transcription mode.
+The **first run downloads** the Faster-Whisper model and the `all-MiniLM-L6-v2`
+embedding model into the Hugging Face cache (`~/.cache/huggingface`) — these are
+**not** committed to git. Startup logs the model-loading status and the active
+transcription mode.
+
+> **Model choice:** the example `.env` uses `FASTER_WHISPER_MODEL=small`. Badge
+> audio is often whispered, and `base` was insufficient for whispered speech in
+> hardware testing; `small` is more accurate but ~2–3× slower on CPU. See
+> `worker/README.md`.
 
 > Quick Faster-Whisper check (optional):
 > ```bash

@@ -94,13 +94,17 @@ The worker runs in WSL2 Ubuntu.
 ```bash
 cd worker
 python3 -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
+# CPU-only machines: install the CPU PyTorch wheel FIRST so faster-whisper /
+# sentence-transformers don't pull in multi-GB CUDA packages.
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
 pip install -r requirements.txt   # heavy: faster-whisper + sentence-transformers
 cp .env.example .env
 # edit .env: set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and TRANSCRIPTION_MODE
 python run_worker.py
 ```
 
-- The **first run downloads** the Whisper "base" model and the `all-MiniLM-L6-v2` embedding model to the Hugging Face cache (`~/.cache/huggingface`).
+- The **first run downloads** the Faster-Whisper model (example `.env` uses `small` — more accurate than `base` for whispered badge audio, ~2–3× slower on CPU) and the `all-MiniLM-L6-v2` embedding model to the Hugging Face cache (`~/.cache/huggingface`).
 - The worker is **outbound-only** — it does not need inbound internet.
 - The same worker can process jobs created by the Vercel API because **both talk to the same Supabase project**.
 
