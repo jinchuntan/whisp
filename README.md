@@ -182,10 +182,10 @@ See `firmware/whisp_badge/README.md` and `docs/HARDWARE.md`. In short:
 
 **Only the FastAPI app + dashboard deploy to Vercel — the worker stays running on
 your local/WSL2 machine.** Vercel auto-detects FastAPI from `requirements.txt`
-(root `main.py` exposes `app`) and routes all requests to the function. The
-FastAPI app serves the dashboard itself (StaticFiles at `/`), and `public/` is
-bundled into the function via `vercel.json`'s `includeFiles`. `.vercelignore`
-keeps the worker, tests, and ML out of the deploy.
+(root `main.py` exposes `app`), serves `public/` as static assets, and routes
+`/api/*` to the function. A one-line `vercel.json` rewrite maps bare `/` to
+`/index.html` so the dashboard loads at the root. `.vercelignore` keeps the
+worker, tests, and ML out of the deploy.
 
 - **Git integration:** connect the repo in the Vercel dashboard — pushes deploy
   automatically. No build command needed.
@@ -202,12 +202,10 @@ Point the badge's `API_BASE_URL` at your Vercel URL. The **same WSL2 worker**
 processes jobs created by Vercel because both talk to the same Supabase project —
 no redeploy of the worker is needed.
 
-> **Local dev vs Vercel:** the same single process serves both the API and the
-> dashboard (FastAPI StaticFiles mounted at `/`, API routers ahead of it). Locally
-> `make dev` finds `public/` at the repo root; on Vercel it's bundled into the
-> function via `includeFiles`. Vercel routes every request to the function, so the
-> app serves the dashboard directly rather than relying on separate CDN static
-> serving.
+> **Local dev vs Vercel:** locally, `make dev` runs one process that serves both
+> the API and the dashboard (FastAPI StaticFiles mounted at `/`, API routers ahead
+> of it). On Vercel, the two are split by `vercel.json`: `public/` is served by
+> Vercel's static layer and only `/api/*` reaches the Python function.
 
 ---
 

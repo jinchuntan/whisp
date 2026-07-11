@@ -1,10 +1,12 @@
 """FastAPI application factory for the Whisp web/API control plane.
 
-The app serves BOTH the ``/api/...`` routes and the static dashboard in
-``public/``. On Vercel all requests are routed to this function (``public/`` is
-bundled via ``vercel.json`` ``includeFiles``), and locally (``uvicorn main:app``)
-the same single process serves everything. Mounting order keeps the API routers
-(added first) ahead of the static catch-all mounted at "/".
+Locally (``uvicorn main:app``) this single process serves BOTH the ``/api/...``
+routes and the static dashboard in ``public/`` (via a StaticFiles mount at "/"),
+so ``make dev`` shows the dashboard at ``/``. On Vercel, ``public/`` is served
+automatically as static assets and a ``vercel.json`` rewrite maps ``/`` to
+``/index.html``; only ``/api/*`` reaches this function, so the StaticFiles mount
+is a local-dev convenience there. Either way, API routers are registered before
+the "/" mount, so ``/api/...`` matches first.
 """
 
 from __future__ import annotations
@@ -65,19 +67,17 @@ def create_app() -> FastAPI:
 
 
 def _find_public_dir() -> os.PathLike[str] | None:
-    """Locate the dashboard's ``public/`` directory.
+    """Locate the dashboard's ``public/`` directory for the local-dev mount.
 
-    Serves both local dev and Vercel: on Vercel the app runs from the project
-    root (working dir) and ``public/`` is bundled into the function via
-    ``vercel.json`` ``includeFiles``. We check a few candidate locations so the
-    lookup is robust to how the function is laid out on disk.
+    On Vercel the dashboard is served by ``@vercel/static`` (see ``vercel.json``),
+    not by this function, so this is primarily for ``make dev``. We still check a
+    couple of candidate locations so it is robust to the working directory.
     """
     from pathlib import Path
 
     candidates = [
-        Path(__file__).resolve().parent.parent / "public",  # repo/function root
-        Path.cwd() / "public",  # Vercel working dir is the project root
-        Path("/var/task/public"),  # Vercel Lambda task root (belt-and-suspenders)
+        Path(__file__).resolve().parent.parent / "public",  # repo root
+        Path.cwd() / "public",  # when run from the project root
     ]
     for candidate in candidates:
         if candidate.is_dir():
@@ -86,16 +86,16 @@ def _find_public_dir() -> os.PathLike[str] | None:
 
 
 def _mount_static(app: FastAPI) -> None:
-    """Serve the dashboard from ``public/`` (local dev AND Vercel).
+    """Mount the dashboard at "/" for local dev (no-op if ``public/`` is absent).
 
-    Vercel routes all non-static requests to the function, so FastAPI serves the
-    dashboard itself. Mounted at "/" LAST, so the API routers (added first) win
-    for ``/api/...``; everything else falls through to the static files, with
-    ``index.html`` served for ``/`` (``html=True``).
+    Registered LAST so the API routers (added first) win for ``/api/...``;
+    everything else falls through to the static files, with ``index.html`` served
+    for ``/`` (``html=True``). On Vercel this mount is unused — Vercel's static
+    layer serves ``public/`` and only ``/api/*`` reaches this function.
     """
     public_dir = _find_public_dir()
     if public_dir is None:
-        log.warning("public/ not found — dashboard will not be served by the API")
+        log.info("public/ not found — dashboard served by Vercel static layer (not this function)")
         return
     from fastapi.staticfiles import StaticFiles
 

@@ -1,9 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "main.py": {
-      "maxDuration": 60,
-      "includeFiles": "public/**"
-    }
-  }
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
+  ]
 }

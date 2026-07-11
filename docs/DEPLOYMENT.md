@@ -38,24 +38,35 @@ vercel
 
 Vercel **auto-detects FastAPI** from `requirements.txt`; the root `main.py` exposes `app`. **No build command is needed.**
 
-**How static serving works.** Vercel routes *every* request to the Python function
-(there is no separate CDN static layer for a Python-function project). So the
-FastAPI app serves the dashboard **itself**: it mounts `public/` as StaticFiles at
-`/` (API routers are registered first, so `/api/...` wins; everything else falls
-through to the static files, and `/` serves `index.html`). For this to work on
-Vercel, `public/` must be **included in the function bundle**.
+**How static serving works.** Vercel serves the files in `public/` as static assets
+at their paths automatically (`/styles.css`, `/app.js`, `/index.html`), and routes
+everything else — including `/api/*` — to the FastAPI function. The one gap is the
+bare root `/`, which is not auto-mapped to `index.html` and so falls through to the
+function and returns FastAPI's `Not Found`. `vercel.json` fixes exactly that with a
+single rewrite:
 
-Deploy config:
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
+  ]
+}
+```
 
-- **`vercel.json`** → `functions."main.py".maxDuration = 60` and
-  **`includeFiles = "public/**"`** — bundles the dashboard into the function so
-  FastAPI can serve it. (An earlier `excludeFiles: public/**` was wrong: it
-  stripped the dashboard, so `/` returned FastAPI's `Not Found`.)
+This maps only the exact root `/` to the static `index.html`. All other paths are
+untouched: `/styles.css` and `/app.js` are still served statically, and `/api/*`
+still reaches the Python function. `index.html` references its assets with
+root-relative paths (`/styles.css`, `/app.js`) and the dashboard calls the API at
+`/api/v1/...`, so everything resolves correctly under this scheme.
+
 - **`.vercelignore`** excludes `worker/`, `firmware/`, `tests/`, `docs/`,
   `supabase/`, `requirements-dev.txt`, `pyproject.toml`, caches, and any local
   `.env` — but **not** `public/`. Excluding `pyproject.toml` forces Vercel to read
-  **`requirements.txt`** as the single dependency source (no ambiguity), and the
-  heavy worker can never ship to Vercel.
+  **`requirements.txt`** as the single dependency source, and the heavy worker can
+  never ship to Vercel.
+- If a deploy ever regresses, use the **Instant Rollback** button in the Vercel
+  dashboard to revert to the previous deployment.
 
 ### Serverless-compatibility audit
 
