@@ -38,17 +38,46 @@ vercel
 
 Vercel **auto-detects FastAPI** from `requirements.txt`; the root `main.py` exposes `app`. The `public/` directory is served automatically at `/`. **No build command is needed.**
 
-The `vercel.json` config keeps the function bundle lean:
+Deploy config keeps the upload and function bundle lean:
 
-- `functions."main.py".maxDuration = 60`
-- `excludeFiles` keeps the worker, tests, firmware, and other ML/heavy files out of the deployed function bundle.
+- **`vercel.json`** → `functions."main.py".maxDuration = 60` and
+  `excludeFiles = "public/**"` (the dashboard is served by the CDN, so it is kept
+  out of the function bundle — this also makes the app skip its local StaticFiles
+  mount when running on Vercel).
+- **`.vercelignore`** excludes `worker/`, `firmware/`, `tests/`, `docs/`,
+  `supabase/`, `requirements-dev.txt`, `pyproject.toml`, caches, and any local
+  `.env`. Excluding `pyproject.toml` forces Vercel to read **`requirements.txt`**
+  as the single dependency source (no ambiguity), and the heavy worker can never
+  ship to Vercel.
 
-### Vercel runtime constraints
+### Serverless-compatibility audit
 
-- Only `/tmp` is writable.
-- No background threads.
-- 4.5 MB request body limit.
-- ~300s max function duration on Hobby.
+The FastAPI app is serverless-safe by design (verified):
+
+| Concern | Status |
+| --- | --- |
+| Transcription in the request path | **No** — the API only enqueues to Supabase and reads state; the worker transcribes. |
+| Filesystem writes | **None** — audio goes straight to Supabase Storage; nothing is written to disk (`/tmp` unused). |
+| Background threads / tasks / loops | **None** — no `threading`, `create_task`, `BackgroundTasks`, or polling loops in `whisp_api/`. |
+| Module-level state assuming a long-lived process | **Safe** — only `@lru_cache` singletons (settings + Supabase client), rebuilt per cold start. No in-memory question store. |
+| Secrets | All from `os.environ` (see below); none in code or committed files. |
+
+### Vercel runtime constraints (respected)
+
+- Only `/tmp` is writable — the API writes nothing.
+- No background threads — the API starts none.
+- 4.5 MB request body limit — badge WAVs are ~320 KB and the API caps uploads at
+  `MAX_AUDIO_BYTES` (default 4 MB), comfortably under the limit.
+- ~300s max function duration on Hobby — the API responds in well under a second.
+
+### CORS & dashboard auth on a Vercel domain
+
+The dashboard (`public/`) is served from the **same** Vercel domain and calls the
+API with **relative** `/api/v1/...` paths, so it is same-origin — no CORS
+preflight is involved. `CORSMiddleware` (`CORS_ALLOW_ORIGINS`, default `*`,
+credentials off) only affects other origins; the badge is not a browser so CORS
+does not apply to it. Admin auth uses an `Authorization: Bearer` header kept only
+in `sessionStorage` — this works identically on `localhost` and on Vercel.
 
 ## 4. Configure Vercel Environment Variables
 

@@ -180,12 +180,31 @@ See `firmware/whisp_badge/README.md` and `docs/HARDWARE.md`. In short:
 
 ## 7) Deploy the web/API to Vercel
 
-See `docs/DEPLOYMENT.md`. Vercel auto-detects FastAPI from `requirements.txt` (root
-`main.py` exposes `app`); `public/` is served at `/`. Set the same env vars from
-`.env` in **Project Settings → Environment Variables** (never the service_role key
-in the browser). Point the badge's `API_BASE_URL` at your Vercel URL. The **same
-WSL2 worker** processes jobs created by Vercel because both talk to the same
-Supabase project.
+**Only the FastAPI app + dashboard deploy to Vercel — the worker stays running on
+your local/WSL2 machine.** Vercel auto-detects FastAPI from `requirements.txt`
+(root `main.py` exposes `app`); `public/` is served at `/` by the CDN and
+`/api/v1/*` hits the function. `.vercelignore` keeps the worker, tests, and ML out
+of the deploy.
+
+- **Git integration:** connect the repo in the Vercel dashboard — pushes deploy
+  automatically. No build command needed.
+- **CLI:** `npm i -g vercel && vercel login`, then `make deploy-preview` (preview)
+  or `make deploy` (production).
+
+Set the web/API env vars in **Project Settings → Environment Variables** (exact
+list in `docs/DEPLOYMENT.md`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+`SUPABASE_AUDIO_BUCKET`, `BADGE_API_KEY`, `ADMIN_API_KEY`, `TRANSCRIPTION_MODE`
+(+ optional `WORKER_OFFLINE_SECONDS`, `CORS_ALLOW_ORIGINS`, `MAX_AUDIO_BYTES`).
+**Never** put the service_role key or Agora secrets in the browser or firmware.
+
+Point the badge's `API_BASE_URL` at your Vercel URL. The **same WSL2 worker**
+processes jobs created by Vercel because both talk to the same Supabase project —
+no redeploy of the worker is needed.
+
+> **Local dev vs Vercel:** locally, `make dev` runs one process that serves both
+> the API and the dashboard (via a StaticFiles mount). On Vercel, the CDN serves
+> `public/` and the function serves `/api/*` — the app detects `public/` is absent
+> from the function bundle and skips the mount automatically.
 
 ---
 

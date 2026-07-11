@@ -3,7 +3,7 @@
   "functions": {
     "main.py": {
       "maxDuration": 60,
-      "excludeFiles": "{worker/**,tests/**,firmware/**,supabase/**,docs/**,public/**,**/*_test.py,**/test_*.py}"
+      "excludeFiles": "public/**"
     }
   }
 }

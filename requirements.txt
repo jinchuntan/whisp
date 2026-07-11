@@ -11,5 +11,6 @@ pydantic-settings>=2.3,<3.0
 supabase>=2.6,<3.0
 httpx>=0.27,<0.29
 
-# Local dev server only (Vercel provides its own ASGI runtime).
-uvicorn[standard]>=0.30,<1.0
+# NOTE: no ASGI server here — Vercel provides its own runtime and imports `app`.
+# uvicorn (for local `make dev`) lives in requirements-dev.txt so the Vercel
+# function bundle stays minimal.

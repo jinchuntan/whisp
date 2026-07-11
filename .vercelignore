@@ -1,0 +1,31 @@
+# What NOT to upload to Vercel. The function needs only main.py + whisp_api/ +
+# requirements.txt + vercel.json; the dashboard needs public/. Everything else is
+# excluded to keep deploys lean and to guarantee the heavy worker never ships.
+
+# Transcription worker (WSL2/local only — heavy ML, must never deploy)
+worker/
+
+# Not needed at runtime
+firmware/
+supabase/
+docs/
+tests/
+
+# Dev-only tooling. Excluding pyproject.toml also forces Vercel to read
+# requirements.txt as the single dependency source (no ambiguity).
+requirements-dev.txt
+pyproject.toml
+Makefile
+
+# Never upload local secrets (belt-and-suspenders; .env is gitignored too)
+.env
+.env.*
+
+# Caches / venvs / local artifacts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.vercel/

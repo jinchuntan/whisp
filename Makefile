@@ -7,7 +7,7 @@ RUFF ?= .venv/bin/ruff
 MYPY ?= .venv/bin/mypy
 
 .PHONY: help venv install install-worker dev worker test test-worker test-all \
-        lint fmt format typecheck check clean
+        lint fmt format typecheck check clean deploy-preview deploy
 
 help:
 	@echo "Whisp make targets:"
@@ -23,6 +23,8 @@ help:
 	@echo "  make fmt            - ruff format (write)"
 	@echo "  make typecheck      - mypy (whisp_api + main)"
 	@echo "  make check          - lint + format-check + typecheck + all tests"
+	@echo "  make deploy-preview - deploy a Vercel preview (web/API + dashboard)"
+	@echo "  make deploy         - deploy to Vercel production (web/API + dashboard)"
 
 venv:
 	python3 -m venv .venv
@@ -63,3 +65,12 @@ check:
 	$(MYPY)
 	$(MAKE) test
 	$(MAKE) test-worker
+
+# ---- Vercel deploy (web/API + dashboard ONLY; the worker is never deployed) ----
+# Requires the Vercel CLI: `npm i -g vercel` then `vercel login`. Set project env
+# vars first (see docs/DEPLOYMENT.md). The worker keeps running separately in WSL2.
+deploy-preview:
+	vercel
+
+deploy:
+	vercel --prod
