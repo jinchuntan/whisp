@@ -26,6 +26,25 @@ class HealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Auth (host email/password via Supabase; tokens live in HttpOnly cookies)
+# ---------------------------------------------------------------------------
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class LoginResponse(BaseModel):
+    authenticated: bool = True
+    email: str
+
+
+class AuthMeResponse(BaseModel):
+    authenticated: bool
+    email: str | None = None
+    role: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Badge
 # ---------------------------------------------------------------------------
 class BadgeNotification(BaseModel):

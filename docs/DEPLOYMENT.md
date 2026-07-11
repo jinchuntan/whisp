@@ -22,7 +22,13 @@ Badges talk to the system over **HTTP polling** — there is no inbound socket t
 4. **RLS is enabled on all tables**, so only the `service_role` key (used server-side) can read or write data.
 5. Find your credentials under **Project Settings -> API**:
    - `SUPABASE_URL`
-   - the **service_role** key (`SUPABASE_SERVICE_ROLE_KEY`)
+   - the **service_role** key (`SUPABASE_SERVICE_ROLE_KEY`) — server-side only
+   - the **anon / public** key (`SUPABASE_ANON_KEY`) — used server-side for host login
+6. **Provision host login.** Under **Authentication -> Users -> Add user**, create
+   an email + password for each host and confirm the email. Under
+   **Authentication -> Providers -> Email**, set **Enable sign-ups = OFF** — Whisp
+   has no public registration. List each host email in `ADMIN_EMAIL_ALLOWLIST`
+   (comma-separated, case-insensitive); only those users can reach host routes.
 
 ## 3. Deploy Web/API to Vercel
 
@@ -87,14 +93,25 @@ The FastAPI app is serverless-safe by design (verified):
   `MAX_AUDIO_BYTES` (default 4 MB), comfortably under the limit.
 - ~300s max function duration on Hobby — the API responds in well under a second.
 
-### CORS & dashboard auth on a Vercel domain
+### CORS, cookies & dashboard auth on a Vercel domain
 
 The dashboard (`public/`) is served from the **same** Vercel domain and calls the
-API with **relative** `/api/v1/...` paths, so it is same-origin — no CORS
-preflight is involved. `CORSMiddleware` (`CORS_ALLOW_ORIGINS`, default `*`,
-credentials off) only affects other origins; the badge is not a browser so CORS
-does not apply to it. Admin auth uses an `Authorization: Bearer` header kept only
-in `sessionStorage` — this works identically on `localhost` and on Vercel.
+API with **relative** `/api/v1/...` paths (and `credentials: "include"`), so it is
+same-origin — no CORS preflight is involved. The badge is not a browser, so CORS
+does not apply to it.
+
+Host auth is a **server-side Supabase Auth** flow: the browser posts email/password
+to `/api/v1/auth/login`, and the API sets the Supabase access/refresh tokens as
+**HttpOnly, SameSite=Lax** cookies (Secure in production). JavaScript never sees the
+tokens; there is no `Authorization` header and nothing in `localStorage` /
+`sessionStorage`. State-changing requests are additionally CSRF-checked against the
+`Origin` / `Referer` header.
+
+**Set `CORS_ALLOW_ORIGINS` to your exact dashboard origin in production** (e.g.
+`https://your-project.vercel.app`). Browsers refuse wildcard (`*`) CORS on
+credentialed requests, and the same list drives the CSRF origin allowlist. The
+default `*` is for local development only, where the app disables `allow_credentials`
+for CORS but same-origin cookies still work.
 
 ## 4. Configure Vercel Environment Variables
 
@@ -104,33 +121,42 @@ Set these under **Project Settings -> Environment Variables**, or via the CLI:
 ```bash
 vercel env add SUPABASE_URL
 vercel env add SUPABASE_SERVICE_ROLE_KEY
+vercel env add SUPABASE_ANON_KEY
 vercel env add SUPABASE_AUDIO_BUCKET
 vercel env add BADGE_API_KEY
-vercel env add ADMIN_API_KEY
+vercel env add ADMIN_EMAIL_ALLOWLIST
+vercel env add SESSION_COOKIE_SECURE
+vercel env add CORS_ALLOW_ORIGINS
 vercel env add TRANSCRIPTION_MODE
 vercel env add WORKER_OFFLINE_SECONDS
-vercel env add CORS_ALLOW_ORIGINS
 vercel env add MAX_AUDIO_BYTES
 ```
 
 Web/API variables:
 
-| Variable | Notes |
-| --- | --- |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-side service_role key |
-| `SUPABASE_AUDIO_BUCKET` | Default `whisp-audio` |
-| `BADGE_API_KEY` | Auth for badge requests |
-| `ADMIN_API_KEY` | Auth for admin/dashboard actions |
-| `TRANSCRIPTION_MODE` | Display only on the API; default `faster_whisper_only` |
-| `WORKER_OFFLINE_SECONDS` | Default `20` |
-| `CORS_ALLOW_ORIGINS` | Allowed browser origins |
-| `MAX_AUDIO_BYTES` | Default `4194304` |
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `SUPABASE_URL` | yes | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side service_role key (never in browser) |
+| `SUPABASE_ANON_KEY` | yes | Public anon key; used server-side for host login |
+| `SUPABASE_AUDIO_BUCKET` | no | Default `whisp-audio` |
+| `BADGE_API_KEY` | yes | Auth for badge requests (`X-Whisp-Key`) |
+| `ADMIN_EMAIL_ALLOWLIST` | yes | Comma-separated host emails allowed to sign in |
+| `SESSION_COOKIE_SECURE` | prod | `true` in production (HTTPS); `false` for local http |
+| `SESSION_COOKIE_SAMESITE` | no | `lax` (default) or `strict` |
+| `SESSION_MAX_AGE_SECONDS` | no | Refresh-cookie lifetime; default `604800` (7 days) |
+| `CORS_ALLOW_ORIGINS` | prod | Exact dashboard origin(s); wildcard rejected with cookies |
+| `TRANSCRIPTION_MODE` | no | Display only on the API; default `faster_whisper_only` |
+| `WORKER_OFFLINE_SECONDS` | no | Default `20` |
+| `MAX_AUDIO_BYTES` | no | Default `4194304` |
+| `ADMIN_API_KEY` | no | Legacy shim; only with `ALLOW_LEGACY_ADMIN_KEY=true` |
+| `ALLOW_LEGACY_ADMIN_KEY` | no | Default `false`; keep off in production |
 
 Notes:
 
 - These are read via `os.environ` at runtime and **only apply to NEW deployments** — redeploy after changing them.
-- **NEVER** put `SUPABASE_SERVICE_ROLE_KEY` or Agora secrets in browser or firmware code.
+- **NEVER** put `SUPABASE_SERVICE_ROLE_KEY` or Agora secrets in browser or firmware code. The `SUPABASE_ANON_KEY` is public by design but is only used server-side here.
+- Passwords, cookies, tokens, and the service-role key are never logged.
 
 ## 5. Run the Worker in WSL2
 
@@ -156,7 +182,7 @@ python run_worker.py
 
 ## 6. Confirming End-to-End
 
-1. In the dashboard, **create an event** and **open a round** (requires the admin key).
+1. In the dashboard, **sign in** with your host email/password, then **create an event** and **open a round**.
 2. POST a sample WAV to `/api/v1/questions`.
 3. Watch the worker log **claim + transcribe**.
 4. Confirm the transcript appears on the dashboard and via `GET /api/v1/questions/{id}`.

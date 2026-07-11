@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from whisp_api.auth import require_admin_key
+from whisp_api.auth import require_admin_user
 from whisp_api.config import Settings, get_settings
 from whisp_api.database import Database, get_database
 from whisp_api.models import AGORA_MODES
@@ -25,7 +25,7 @@ from whisp_api.schemas import (
     WorkerHealthResponse,
 )
 
-router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_key)])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_user)])
 
 _ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars
 

@@ -136,85 +136,80 @@ def test_badge_state_notifications(client, fake_db):
     assert notes[0]["similar_count"] == 3
 
 
-def test_admin_create_event_and_round(client, admin_headers):
-    r = client.post("/api/v1/admin/events", json={"name": "My Conf"}, headers=admin_headers)
+def test_admin_create_event_and_round(host_client):
+    r = host_client.post("/api/v1/admin/events", json={"name": "My Conf"})
     assert r.status_code == 201
     event_id = r.json()["id"]
     assert len(r.json()["join_code"]) == 6
 
-    r2 = client.post(
+    r2 = host_client.post(
         "/api/v1/admin/rounds",
         json={"prompt": "What's your question?", "event_id": event_id},
-        headers=admin_headers,
     )
     assert r2.status_code == 201
     assert r2.json()["status"] == "open"
 
 
-def test_admin_open_round_closes_previous(client, fake_db, admin_headers):
+def test_admin_open_round_closes_previous(host_client, fake_db):
     ev = fake_db.seed_event()
     first = fake_db.seed_round(ev["id"], "first")
-    r = client.post(
-        "/api/v1/admin/rounds",
-        json={"prompt": "second", "event_id": ev["id"]},
-        headers=admin_headers,
-    )
+    r = host_client.post("/api/v1/admin/rounds", json={"prompt": "second", "event_id": ev["id"]})
     assert r.status_code == 201
     first_row = next(x for x in fake_db.rounds if x["id"] == first["id"])
     assert first_row["status"] == "closed"
 
 
-def test_admin_close_round(client, fake_db, admin_headers):
+def test_admin_close_round(host_client, fake_db):
     ev = fake_db.seed_event()
     rnd = fake_db.seed_round(ev["id"])
-    r = client.post(f"/api/v1/admin/rounds/{rnd['id']}/close", headers=admin_headers)
+    r = host_client.post(f"/api/v1/admin/rounds/{rnd['id']}/close")
     assert r.status_code == 200
     assert r.json()["status"] == "closed"
 
 
-def test_admin_close_unknown_round_404(client, admin_headers):
-    r = client.post("/api/v1/admin/rounds/nope/close", headers=admin_headers)
+def test_admin_close_unknown_round_404(host_client):
+    r = host_client.post("/api/v1/admin/rounds/nope/close")
     assert r.status_code == 404
 
 
-def test_admin_mark_question_answered(client, fake_db, admin_headers):
+def test_admin_mark_question_answered(host_client, fake_db):
     ev = fake_db.seed_event()
     fake_db.questions["qX"] = {"id": "qX", "badge_id": "b", "status": "done", "event_id": ev["id"]}
-    r = client.post("/api/v1/admin/questions/qX/answered", headers=admin_headers)
+    r = host_client.post("/api/v1/admin/questions/qX/answered")
     assert r.status_code == 200
     assert fake_db.questions["qX"]["answered_at"] is not None
 
 
-def test_admin_mark_cluster_answered(client, fake_db, admin_headers):
+def test_admin_mark_cluster_answered(host_client, fake_db):
     ev = fake_db.seed_event()
     rnd = fake_db.seed_round(ev["id"])
     cl = fake_db.seed_cluster(rnd["id"], "canon", 2)
-    r = client.post(f"/api/v1/admin/clusters/{cl['id']}/answered", headers=admin_headers)
+    r = host_client.post(f"/api/v1/admin/clusters/{cl['id']}/answered")
     assert r.status_code == 200
     assert fake_db.clusters[cl["id"]]["status"] == "answered"
 
 
-def test_admin_recluster(client, fake_db, admin_headers):
+def test_admin_recluster(host_client, fake_db):
     ev = fake_db.seed_event()
     fake_db.seed_round(ev["id"])
-    r = client.post("/api/v1/admin/recluster", headers=admin_headers)
+    r = host_client.post("/api/v1/admin/recluster")
     assert r.status_code == 200
 
 
-def test_admin_recluster_no_round_400(client, fake_db, admin_headers):
+def test_admin_recluster_no_round_400(host_client, fake_db):
     fake_db.seed_event()
-    r = client.post("/api/v1/admin/recluster", headers=admin_headers)
+    r = host_client.post("/api/v1/admin/recluster")
     assert r.status_code == 400
 
 
-def test_worker_health_online_offline(client, fake_db, admin_headers):
+def test_worker_health_online_offline(host_client, fake_db):
     from datetime import datetime, timedelta, timezone
 
     fake_db.seed_heartbeat("worker-a", "faster_whisper_only")  # fresh -> online
     old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     fake_db.seed_heartbeat("worker-b", "agora_first", last_seen=old)  # stale -> offline
 
-    r = client.get("/api/v1/admin/worker-health", headers=admin_headers)
+    r = host_client.get("/api/v1/admin/worker-health")
     assert r.status_code == 200
     body = r.json()
     assert body["worker_online"] is True
@@ -223,11 +218,11 @@ def test_worker_health_online_offline(client, fake_db, admin_headers):
     assert by_id["worker-b"]["online"] is False
 
 
-def test_admin_state_shape(client, fake_db, admin_headers):
+def test_admin_state_shape(host_client, fake_db):
     ev = fake_db.seed_event("Conf")
     rnd = fake_db.seed_round(ev["id"], "prompt")
     fake_db.seed_cluster(rnd["id"], "canon", 2)
-    r = client.get("/api/v1/admin/state", headers=admin_headers)
+    r = host_client.get("/api/v1/admin/state")
     body = r.json()
     assert body["transcription_mode"] == "faster_whisper_only"
     assert body["agora_mode_active"] is False

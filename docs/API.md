@@ -5,15 +5,45 @@ Base path: `/api/v1`. All examples assume the API runs at `$BASE`
 
 ## Authentication
 
-| Caller | Header | Secret |
-|--------|--------|--------|
-| Badge  | `X-Whisp-Key: <BADGE_API_KEY>` | prototype shared badge key |
-| Admin  | `Authorization: Bearer <ADMIN_API_KEY>` | prototype shared admin key |
+| Caller | Mechanism | Secret |
+|--------|-----------|--------|
+| Badge  | `X-Whisp-Key: <BADGE_API_KEY>` header | shared badge key, constant-time compared |
+| Host (dashboard) | HttpOnly session cookies from `POST /auth/login` | Supabase email/password + `ADMIN_EMAIL_ALLOWLIST` |
+| Host (legacy) | `Authorization: Bearer <ADMIN_API_KEY>` | off by default (`ALLOW_LEGACY_ADMIN_KEY`); tests/CLI only |
 
-Keys are compared in constant time. This is **hackathon auth** — the production
-roadmap is per-badge credentials and a real admin session. Errors are returned as
-`{"detail": "..."}` (FastAPI) or `{"ok": false, "error": ..., "message": ...}`
-for internal errors; stack traces and secrets are never exposed.
+Host auth is a **server-side Supabase Auth** flow. The browser posts
+email/password to `/auth/login`; the API validates against Supabase, checks the
+email allowlist, and sets the access/refresh tokens as **HttpOnly, SameSite=Lax**
+cookies (Secure in production). Tokens are never returned to JavaScript. Session
+requests use `credentials: "include"`; state-changing requests are CSRF-checked via
+the `Origin`/`Referer` header. Badge key auth is a header, so it is CSRF-safe and
+unaffected.
+
+Errors are returned as `{"detail": "..."}` (FastAPI) or
+`{"ok": false, "error": ..., "message": ...}` for internal errors; stack traces,
+secrets, passwords, and tokens are never exposed or logged.
+
+---
+
+## Auth endpoints
+
+### `POST /api/v1/auth/login`  → `200`
+Body `{ "email": "...", "password": "..." }`. On success sets `whisp_at` /
+`whisp_rt` HttpOnly cookies and returns `{ "authenticated": true, "email": "..." }`.
+`401` for wrong credentials, `403` if the email is not on the allowlist (no cookies
+set), `503` if login is not configured / Supabase is unreachable.
+
+### `GET /api/v1/auth/me`
+Returns the current session status; transparently refreshes an expired access token
+using the refresh cookie. No error for anonymous callers:
+```json
+{ "authenticated": false, "email": null, "role": null }
+```
+or when signed in: `{ "authenticated": true, "email": "...", "role": "host" }`.
+
+### `POST /api/v1/auth/logout`  → `200`
+Revokes the Supabase session (best-effort) and clears the cookies. Returns
+`{ "ok": true }`.
 
 ---
 
@@ -120,7 +150,12 @@ Header: `X-Whisp-Key`. Poll for the result. One of:
 
 ## Admin endpoints
 
-All require `Authorization: Bearer <ADMIN_API_KEY>`.
+All require a host session (the `whisp_at`/`whisp_rt` cookies from `/auth/login`).
+State-changing calls also require a matching `Origin`/`Referer` (CSRF). The `curl`
+examples below use `-b cookies.txt` after logging in with
+`curl -c cookies.txt -X POST "$BASE/api/v1/auth/login" -H 'Content-Type: application/json' -d '{"email":"...","password":"..."}'`.
+(With `ALLOW_LEGACY_ADMIN_KEY=true`, `Authorization: Bearer <ADMIN_API_KEY>` also
+works for tests/CLI.)
 
 ### `GET /api/v1/admin/state`
 The dashboard's single source of truth (poll every ~1.5 s).
@@ -156,7 +191,7 @@ The dashboard's single source of truth (poll every ~1.5 s).
 ### `POST /api/v1/admin/events`  → `201`
 ```bash
 curl -X POST "$BASE/api/v1/admin/events" \
-  -H "Authorization: Bearer $ADMIN_API_KEY" \
+  -b cookies.txt -H "Origin: $BASE" \
   -H "Content-Type: application/json" -d '{"name": "DevConf 2026"}'
 ```
 Creates an event (random 6-char `join_code`) and makes it the active event.

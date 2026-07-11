@@ -76,19 +76,33 @@ Everything below runs inside **WSL2** unless it says PowerShell.
 3. Confirm **Storage → whisp-audio** exists and is **not public**. (If your project
    blocks `storage.buckets` inserts, create it manually: Storage → New bucket →
    name `whisp-audio`, Public = **OFF**.)
-4. Copy **Project Settings → API**: the **Project URL** (`SUPABASE_URL`) and the
-   **service_role** key (`SUPABASE_SERVICE_ROLE_KEY`). The service_role key bypasses
-   RLS — keep it server-side only, never in the browser or firmware.
+4. Copy **Project Settings → API**: the **Project URL** (`SUPABASE_URL`), the
+   **service_role** key (`SUPABASE_SERVICE_ROLE_KEY`), and the **anon / public**
+   key (`SUPABASE_ANON_KEY`). The service_role key bypasses RLS — keep it
+   server-side only, never in the browser or firmware. The anon key is public by
+   design and is used only server-side for host login (see step 5).
+5. **Create your host login.** Open **Authentication → Users → Add user** and add
+   an email + password for yourself (confirm the email). Then, under
+   **Authentication → Providers → Email**, turn **Enable sign-ups OFF** — Whisp
+   has no public registration; hosts are provisioned here by hand. You'll list
+   this email in `ADMIN_EMAIL_ALLOWLIST` below so only it can reach host routes.
 
 ## 2) Configure the web/API `.env`
 
 ```bash
 cp .env.example .env
-# edit .env: set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and generate keys:
+# edit .env: set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, and
+# ADMIN_EMAIL_ALLOWLIST (the host email you created in step 5). Then a badge key:
 python3 -c "import secrets; print('BADGE_API_KEY=badge_'+secrets.token_urlsafe(24))"
-python3 -c "import secrets; print('ADMIN_API_KEY=admin_'+secrets.token_urlsafe(24))"
 ```
-Put those two values in `.env`. Leave `TRANSCRIPTION_MODE=faster_whisper_only`.
+Put the badge key in `.env`. Set `ADMIN_EMAIL_ALLOWLIST=you@yourevent.com`. For
+local `http://localhost` dev set `SESSION_COOKIE_SECURE=false` (cookies over plain
+HTTP); keep it **true** in production. Leave `TRANSCRIPTION_MODE=faster_whisper_only`.
+
+> Host sign-in is email/password (Supabase Auth), handled entirely server-side so
+> tokens live in HttpOnly cookies — never in the browser's JS or storage. The old
+> shared `ADMIN_API_KEY` is retained only as an optional test/CLI shim behind
+> `ALLOW_LEGACY_ADMIN_KEY` (default **off**); the browser never uses it.
 
 ## 3) Install and run the API locally
 
@@ -99,8 +113,8 @@ make install          # creates ./.venv and installs web/API + dev deps
 make dev              # uvicorn on http://0.0.0.0:8000  (also serves the dashboard)
 ```
 Open <http://localhost:8000/> for the dashboard and
-<http://localhost:8000/api/docs> for Swagger. Log into the dashboard with your
-`ADMIN_API_KEY`.
+<http://localhost:8000/api/docs> for Swagger. Sign in to the dashboard with the
+**email and password** you created in Supabase Auth (step 5).
 
 > PowerShell alternative (if you prefer running the API on Windows): use a working
 > Python 3.10+ and `python -m venv .venv; .\.venv\Scripts\Activate.ps1;
@@ -196,9 +210,14 @@ keeps the worker, tests, and ML out of the deploy. No `vercel.json` is needed.
 
 Set the web/API env vars in **Project Settings → Environment Variables** (exact
 list in `docs/DEPLOYMENT.md`): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-`SUPABASE_AUDIO_BUCKET`, `BADGE_API_KEY`, `ADMIN_API_KEY`, `TRANSCRIPTION_MODE`
-(+ optional `WORKER_OFFLINE_SECONDS`, `CORS_ALLOW_ORIGINS`, `MAX_AUDIO_BYTES`).
-**Never** put the service_role key or Agora secrets in the browser or firmware.
+`SUPABASE_ANON_KEY`, `SUPABASE_AUDIO_BUCKET`, `BADGE_API_KEY`,
+`ADMIN_EMAIL_ALLOWLIST`, `SESSION_COOKIE_SECURE=true`,
+`CORS_ALLOW_ORIGINS=https://your-project.vercel.app`, `TRANSCRIPTION_MODE`
+(+ optional `SESSION_COOKIE_SAMESITE`, `SESSION_MAX_AGE_SECONDS`,
+`WORKER_OFFLINE_SECONDS`, `MAX_AUDIO_BYTES`). In production, set
+`CORS_ALLOW_ORIGINS` to your exact dashboard origin — browsers reject wildcard CORS
+with credentialed cookies. **Never** put the service_role key or Agora secrets in
+the browser or firmware.
 
 Point the badge's `API_BASE_URL` at your Vercel URL. The **same WSL2 worker**
 processes jobs created by Vercel because both talk to the same Supabase project —
@@ -241,15 +260,22 @@ make typecheck     # mypy (whisp_api + main)
 Tests never contact Agora/Supabase, download a model, or need the ESP32 (fakes +
 dependency injection throughout).
 
-## Security & privacy (prototype vs production)
+## Security & privacy
 
-- **Prototype auth:** two shared keys — `X-Whisp-Key` (badge) and
-  `Authorization: Bearer` (admin), constant-time compared. **Production roadmap:**
-  per-badge credentials and a real admin session.
+- **Host auth:** email/password via Supabase Auth, handled server-side. Access and
+  refresh tokens live in **HttpOnly, SameSite** cookies (Secure in production) and
+  are never exposed to JavaScript. Only emails in `ADMIN_EMAIL_ALLOWLIST` may reach
+  host routes; there is no public sign-up. State-changing requests are CSRF-checked
+  by Origin/Referer. The legacy shared `ADMIN_API_KEY` is off by default and used
+  only for tests/CLI when `ALLOW_LEGACY_ADMIN_KEY=true`.
+- **Badge auth:** shared `X-Whisp-Key` (`BADGE_API_KEY`), constant-time compared —
+  unchanged. **Production roadmap:** per-badge credentials.
 - Audio is stored in a **private** bucket; RLS denies anonymous DB access; the
-  browser only calls our API. The service_role key and Agora secrets are
-  server/worker-only — never in firmware or the browser.
-- Attendee text is treated as untrusted (dashboard renders via `textContent`).
+  browser only calls our API with `credentials: "include"`. The service_role key
+  and Agora secrets are server/worker-only — never in firmware or the browser.
+- Attendee text is treated as untrusted (dashboard renders via `textContent` /
+  `createElement` only — no `innerHTML` with dynamic data).
+- Passwords, cookies, tokens, and the service-role key are never logged.
 - Audio auto-deletes after `AUDIO_RETENTION_HOURS` (default 24); transcripts remain.
 - Secrets live only in `.env` / `config.h` (both gitignored). No secrets are
   committed.

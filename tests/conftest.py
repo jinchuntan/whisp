@@ -15,9 +15,22 @@ from whisp_api.app import create_app
 from whisp_api.config import Settings, get_settings
 from whisp_api.database import get_database
 from whisp_api.storage import get_storage
+from whisp_api.supabase_auth import (
+    AuthSession,
+    AuthUnavailable,
+    AuthUser,
+    InvalidCredentials,
+    InvalidSession,
+    get_auth_client,
+)
 
 BADGE_KEY = "test-badge-key"
 ADMIN_KEY = "test-admin-key"
+
+HOST_EMAIL = "host@example.com"
+HOST_PASSWORD = "correct-horse-battery-staple"
+OTHER_EMAIL = "outsider@example.com"  # valid Supabase user, NOT on the allowlist
+ORIGIN = "http://testserver"  # TestClient's origin; matches CORS_ALLOW_ORIGINS below
 
 
 def make_wav(seconds: float = 0.2, sample_rate: int = 16000) -> bytes:
@@ -260,13 +273,71 @@ class FakeDatabase:
         return list(self.heartbeats)
 
 
+class FakeAuthClient:
+    """In-memory Supabase Auth stand-in. No network; deterministic."""
+
+    def __init__(self, unavailable: bool = False) -> None:
+        # email -> password (both HOST and OTHER have valid credentials; only
+        # HOST is on the allowlist, so OTHER exercises the "unauthorized" path).
+        self.passwords = {HOST_EMAIL: HOST_PASSWORD, OTHER_EMAIL: "also-valid-pw"}
+        self.access_to_email: dict[str, str] = {}
+        self.refresh_to_email: dict[str, str] = {}
+        self.signed_out: list[str] = []
+        self.unavailable = unavailable
+        self._n = 0
+
+    def _issue(self, email: str) -> AuthSession:
+        self._n += 1
+        at, rt = f"at-{email}-{self._n}", f"rt-{email}-{self._n}"
+        self.access_to_email[at] = email
+        self.refresh_to_email[rt] = email
+        return AuthSession(access_token=at, refresh_token=rt, expires_in=3600, email=email)
+
+    async def sign_in(self, email: str, password: str) -> AuthSession:
+        if self.unavailable:
+            raise AuthUnavailable("down")
+        if self.passwords.get(email) != password:
+            raise InvalidCredentials("bad creds")
+        return self._issue(email)
+
+    async def get_user(self, access_token: str) -> AuthUser:
+        if self.unavailable:
+            raise AuthUnavailable("down")
+        email = self.access_to_email.get(access_token)
+        if not email:
+            raise InvalidSession("unknown token")
+        return AuthUser(id=f"uid-{email}", email=email)
+
+    async def refresh(self, refresh_token: str) -> AuthSession:
+        if self.unavailable:
+            raise AuthUnavailable("down")
+        email = self.refresh_to_email.get(refresh_token)
+        if not email:
+            raise InvalidSession("unknown refresh")
+        self._n += 1
+        at = f"at-{email}-{self._n}"
+        self.access_to_email[at] = email
+        return AuthSession(
+            access_token=at, refresh_token=refresh_token, expires_in=3600, email=email
+        )
+
+    async def sign_out(self, access_token: str) -> None:
+        self.access_to_email.pop(access_token, None)
+        self.signed_out.append(access_token)
+
+
 @pytest.fixture
 def test_settings() -> Settings:
     return Settings(
         badge_api_key=BADGE_KEY,
         admin_api_key=ADMIN_KEY,
-        supabase_url="",
+        supabase_url="https://test.supabase.co",
+        supabase_anon_key="test-anon-key",
         supabase_service_role_key="",
+        admin_email_allowlist=f"{HOST_EMAIL}, Someone-Else@Example.com",
+        session_cookie_secure=False,  # tests run over http
+        cors_allow_origins=ORIGIN,
+        allow_legacy_admin_key=False,
     )
 
 
@@ -281,19 +352,35 @@ def fake_storage() -> FakeStorage:
 
 
 @pytest.fixture
-def client(test_settings, fake_db, fake_storage) -> TestClient:
-    app = create_app()
-    app.dependency_overrides[get_settings] = lambda: test_settings
-    app.dependency_overrides[get_database] = lambda: fake_db
-    app.dependency_overrides[get_storage] = lambda: fake_storage
+def fake_auth() -> FakeAuthClient:
+    return FakeAuthClient()
+
+
+@pytest.fixture
+def app(test_settings, fake_db, fake_storage, fake_auth):
+    application = create_app()
+    application.dependency_overrides[get_settings] = lambda: test_settings
+    application.dependency_overrides[get_database] = lambda: fake_db
+    application.dependency_overrides[get_storage] = lambda: fake_storage
+    application.dependency_overrides[get_auth_client] = lambda: fake_auth
+    return application
+
+
+@pytest.fixture
+def client(app) -> TestClient:
     return TestClient(app)
+
+
+@pytest.fixture
+def host_client(app) -> TestClient:
+    """A TestClient already logged in as the allowlisted host (session cookies)."""
+    c = TestClient(app)
+    c.headers.update({"origin": ORIGIN})  # satisfies CSRF on state-changing calls
+    r = c.post("/api/v1/auth/login", json={"email": HOST_EMAIL, "password": HOST_PASSWORD})
+    assert r.status_code == 200, r.text
+    return c
 
 
 @pytest.fixture
 def badge_headers() -> dict[str, str]:
     return {"X-Whisp-Key": BADGE_KEY, "X-Badge-Id": "badge-001", "Content-Type": "audio/wav"}
-
-
-@pytest.fixture
-def admin_headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {ADMIN_KEY}"}

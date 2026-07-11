@@ -15,7 +15,7 @@ them. It complements `IMPLEMENTATION_PLAN.md` (scope/phases) and `API.md` (contr
         │ shows transcript                         │ upload wav (private)
         │ + "N asked similar"                      ▼
  ┌────────────┐                        ┌──────────────────────────┐
- │ Host        │  admin API (Bearer)   │  Supabase                 │
+ │ Host        │ login (cookie session)│  Supabase                 │
  │ dashboard   │ ◀────────────────────▶│  Postgres + Storage       │
  │ (public/)   │  poll admin/state     │  (state + whisp-audio)    │
  └────────────┘                        └─────────┬────────────────┘
@@ -99,12 +99,19 @@ bridge** (pushing PCM into the RTC channel so Agora's bot can hear it) is define
 boundary rather than fabricated. A deterministic `MockAgoraProvider` powers tests and
 credential-free demos. See `docs/AGORA_SETUP.md` for the exact blocker.
 
-### D8 — Auth: separate prototype keys, constant-time compare
-Badge endpoints require `X-Whisp-Key: <BADGE_API_KEY>`; mutating admin endpoints
-require `Authorization: Bearer <ADMIN_API_KEY>`. Keys are compared with
-`hmac.compare_digest`. This is explicitly **hackathon** auth; the roadmap is
-per-badge credentials and a real admin session. Documented in `docs/API.md` and the
-security section of `README.md`.
+### D8 — Auth: badge key (headers) + host session (cookies)
+Badge endpoints require `X-Whisp-Key: <BADGE_API_KEY>`, compared with
+`hmac.compare_digest` — a header, so CSRF-safe and unchanged. Host/admin endpoints
+require a **server-side Supabase Auth session**: `/api/v1/auth/login` validates
+email/password against Supabase, enforces `ADMIN_EMAIL_ALLOWLIST`, and stores the
+access/refresh tokens in **HttpOnly, SameSite** cookies (Secure in production).
+Tokens never reach JavaScript; the access token is refreshed transparently via the
+refresh cookie. State-changing session requests are CSRF-checked against
+`Origin`/`Referer`. A legacy shared `ADMIN_API_KEY` remains available only for
+tests/CLI behind `ALLOW_LEGACY_ADMIN_KEY` (default off). Implemented in
+`whisp_api/auth.py`, `whisp_api/supabase_auth.py`, and `whisp_api/routes/auth.py`;
+documented in `docs/API.md` and the security section of `README.md`. **Roadmap:**
+per-badge credentials.
 
 ### D9 — Observability by question id
 Structured logs trace a question through upload → storage → claim → each provider
@@ -118,14 +125,15 @@ dashboard show worker online/offline, mode, version, and last-seen.
 ```
 main.py                       # Vercel entrypoint: `from whisp_api.app import app`
 whisp_api/
-  app.py        # create_app(): routers, DI, local static serving
-  config.py     # Settings (pydantic-settings) from env
-  auth.py       # badge + admin dependencies (constant-time)
-  database.py   # Database gateway (Supabase PostgREST + rpc) + protocol
-  storage.py    # Storage gateway (Supabase Storage)
-  models.py     # enums + domain constants (statuses, modes)
-  schemas.py    # Pydantic request/response models
-  routes/       # health, badge, questions, admin
+  app.py           # create_app(): routers, DI, CORS, local static serving
+  config.py        # Settings (pydantic-settings) from env
+  auth.py          # badge key + host session dependencies, cookies, CSRF
+  supabase_auth.py # server-side Supabase Auth REST client (login/user/refresh/logout)
+  database.py      # Database gateway (Supabase PostgREST + rpc) + protocol
+  storage.py       # Storage gateway (Supabase Storage)
+  models.py        # enums + domain constants (statuses, modes)
+  schemas.py       # Pydantic request/response models
+  routes/          # health, auth, badge, questions, admin
 worker/whisp_worker/
   config.py     # worker Settings
   worker.py     # main loop: heartbeat, claim, transcribe, cluster, cleanup

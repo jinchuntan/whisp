@@ -3,99 +3,214 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
   <title>Whisp — Host Console</title>
+  <meta name="description" content="Whisp — anonymous voice Q&A for live events." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23090909'/><text y='.9em' x='6' font-size='78' fill='%2300f5f5' font-family='monospace' font-weight='700'>W</text></svg>" />
 </head>
 <body>
-  <!-- Login gate -->
-  <div id="login" class="login-overlay">
-    <form id="login-form" class="login-card" autocomplete="off">
-      <div class="brand"><span class="brand-mark">WHISP</span><span class="brand-sub">host console</span></div>
-      <p class="login-hint">Enter the admin API key to control this event.</p>
-      <input id="admin-key" type="password" placeholder="Admin API key" aria-label="Admin API key" />
-      <button type="submit" class="btn btn-primary">Enter console</button>
-      <p id="login-error" class="error-text" hidden></p>
-      <p class="login-note">Prototype auth — the key is kept only in this tab's sessionStorage.</p>
-    </form>
-  </div>
+  <!-- ================= LOGIN ================= -->
+  <main id="login-view" class="login" hidden>
+    <section class="login-hero">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <p class="eyebrow">Anonymous voice Q&amp;A</p>
+        <div class="wordmark wordmark-xl">WHISP</div>
+        <h1 class="hero-statement">THE ROOM HAS<br />SOMETHING TO SAY.</h1>
+        <p class="hero-copy">
+          Anonymous voice Q&amp;A for rooms where too many good questions go unasked.
+        </p>
+        <div class="waveform" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <p class="hero-privacy"><span class="dot"></span> Anonymous by design — no names, no hands, no spotlight.</p>
+      </div>
+    </section>
 
-  <!-- Console -->
-  <div id="console" hidden>
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">WHISP</span><span class="brand-sub">host console</span></div>
-      <div class="topbar-status">
-        <span id="onair" class="onair off">OFF AIR</span>
-        <span id="mode-pill" class="pill pill-muted" title="Worker transcription mode">mode: —</span>
-        <span id="agora-warning" class="pill pill-warn" hidden>⚠ Agora mode — consumes credit</span>
-        <span id="worker-pill" class="pill pill-muted" title="Worker heartbeat">worker: —</span>
-        <button id="logout" class="btn btn-ghost btn-sm">Log out</button>
+    <section class="login-panel">
+      <form id="login-form" class="login-card" novalidate autocomplete="on">
+        <div class="wordmark login-mark">WHISP</div>
+        <h2>Welcome back</h2>
+        <p class="login-sub">Sign in to manage your live event.</p>
+
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" inputmode="email" autocomplete="username"
+            placeholder="you@event.com" required autofocus />
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="password-wrap">
+            <input id="password" name="password" type="password" autocomplete="current-password"
+              placeholder="••••••••" required />
+            <button type="button" id="toggle-password" class="ghost-icon" aria-label="Show password"
+              aria-pressed="false">Show</button>
+          </div>
+        </div>
+
+        <button type="submit" id="login-submit" class="btn btn-primary btn-block">
+          <span class="btn-label">Sign in to host console</span>
+          <span class="spinner" aria-hidden="true" hidden></span>
+        </button>
+
+        <p id="login-error" class="form-error" role="alert" hidden></p>
+      </form>
+    </section>
+  </main>
+
+  <!-- ================= DASHBOARD ================= -->
+  <div id="app-view" hidden>
+    <header class="topbar" role="banner">
+      <div class="topbar-left">
+        <span class="wordmark">WHISP</span>
+        <span class="tag-console">Host Console</span>
+        <span id="topbar-event" class="topbar-event" title="Active event"></span>
+      </div>
+      <div class="topbar-right">
+        <span id="onair" class="status-pill onair off"><span class="pip"></span><span class="onair-text">OFF AIR</span></span>
+        <span id="worker-pill" class="status-pill" title="Transcription worker heartbeat">
+          <span class="pip"></span><span>worker —</span>
+        </span>
+        <span id="mode-pill" class="status-pill mono" title="Worker transcription mode">mode —</span>
+        <span id="agora-warning" class="status-pill warn" hidden title="Agora mode can consume credit">⚠ Agora credit</span>
+        <span id="updated" class="mono muted-xs" aria-live="off">—</span>
+        <div class="profile">
+          <button type="button" id="profile-btn" class="profile-btn" aria-haspopup="true" aria-expanded="false">
+            <span id="profile-initials" class="avatar">·</span>
+          </button>
+          <div id="profile-menu" class="profile-menu" role="menu" hidden>
+            <p id="profile-email" class="profile-email mono"></p>
+            <button type="button" id="logout-btn" class="menu-item" role="menuitem">Log out</button>
+          </div>
+        </div>
       </div>
     </header>
 
-    <div id="banner" class="banner" hidden></div>
+    <!-- Overview metrics -->
+    <section class="overview" aria-label="Live overview">
+      <div class="metric"><span class="metric-num mono" id="m-questions">0</span><span class="metric-label">Questions</span></div>
+      <div class="metric"><span class="metric-num mono" id="m-awaiting">0</span><span class="metric-label">Awaiting answer</span></div>
+      <div class="metric"><span class="metric-num mono" id="m-topics">0</span><span class="metric-label">Topics</span></div>
+      <div class="metric"><span class="metric-num mono" id="m-loudest">0</span><span class="metric-label">Loudest topic</span></div>
+      <div class="metric metric-worker"><span class="metric-num mono" id="m-worker">—</span><span class="metric-label">Worker</span></div>
+    </section>
 
-    <main class="grid">
-      <!-- Left: controls -->
-      <section class="panel controls">
-        <h2>Event</h2>
-        <div class="field">
-          <label for="event-name">New event name</label>
-          <div class="row">
-            <input id="event-name" type="text" placeholder="e.g. DevConf 2026" />
-            <button id="create-event" class="btn btn-primary">Create</button>
+    <main class="board">
+      <!-- Control rail -->
+      <aside class="rail" aria-label="Event controls">
+        <!-- No event -->
+        <section id="setup-card" class="card card-setup" hidden>
+          <p class="kicker">Get started</p>
+          <h3>Create your event</h3>
+          <p class="muted">Creating an event makes it active and gives you a join code for badges.</p>
+          <div class="field">
+            <label for="event-name">Event name</label>
+            <input id="event-name" type="text" placeholder="e.g. DevConf 2026" maxlength="200" />
           </div>
-        </div>
-        <div id="event-info" class="event-info" hidden>
-          <div><span class="muted">Active event</span><strong id="event-title">—</strong></div>
-          <div><span class="muted">Join code</span><code id="event-code">—</code></div>
-        </div>
+          <button type="button" id="create-event" class="btn btn-primary btn-block">Create event</button>
+        </section>
 
-        <h2>Round</h2>
-        <div class="field">
-          <label for="round-prompt">Host prompt (optional)</label>
-          <textarea id="round-prompt" rows="2" placeholder="Ask the room a question…"></textarea>
-          <div class="row">
-            <button id="open-round" class="btn btn-primary">Open round</button>
-            <button id="close-round" class="btn btn-danger" disabled>Close round</button>
+        <!-- Active event -->
+        <section id="event-card" class="card" hidden>
+          <p class="kicker">Active event</p>
+          <h3 id="event-title" class="event-title"></h3>
+          <div class="joincode">
+            <div>
+              <span class="metric-label">Join code</span>
+              <span id="join-code" class="mono joincode-value"></span>
+            </div>
+            <button type="button" id="copy-join" class="btn btn-ghost btn-sm" aria-label="Copy join code">Copy</button>
           </div>
-        </div>
-        <div id="round-info" class="round-info" hidden>
-          <span class="muted">Open round</span>
-          <p id="round-current-prompt">—</p>
-        </div>
+          <details class="disclosure">
+            <summary>Switch event</summary>
+            <div class="field">
+              <label for="new-event-name">New event name</label>
+              <input id="new-event-name" type="text" placeholder="Another event" maxlength="200" />
+            </div>
+            <button type="button" id="create-another" class="btn btn-ghost btn-sm btn-block">Create &amp; make active</button>
+          </details>
+        </section>
 
-        <h2>Clustering</h2>
-        <button id="recluster" class="btn btn-ghost" disabled>Recompute clusters</button>
-        <p class="muted small">Regroups all answered-round questions by meaning.</p>
-      </section>
+        <!-- Round control -->
+        <section id="round-card" class="card" hidden>
+          <p class="kicker">Round</p>
+          <div id="round-closed" class="round-block">
+            <h3>Off air</h3>
+            <p class="muted">Compose a prompt and open a round to go live.</p>
+            <div class="field">
+              <label for="round-prompt">Host prompt (optional)</label>
+              <textarea id="round-prompt" rows="3" maxlength="500" placeholder="Ask the room a question…"></textarea>
+            </div>
+            <button type="button" id="open-round" class="btn btn-live btn-block">Open round · Go on air</button>
+          </div>
+          <div id="round-open" class="round-block" hidden>
+            <h3 class="live-title"><span class="pip live"></span> On air</h3>
+            <p class="metric-label">Current prompt</p>
+            <p id="round-current-prompt" class="prompt-echo"></p>
+            <button type="button" id="close-round" class="btn btn-danger btn-block">Close round</button>
+          </div>
+          <details class="disclosure advanced">
+            <summary>Advanced</summary>
+            <p class="muted small">Recompute how questions are grouped into topics.</p>
+            <button type="button" id="recluster" class="btn btn-ghost btn-sm btn-block">Recompute topics</button>
+          </details>
+        </section>
+      </aside>
 
-      <!-- Middle: question feed -->
-      <section class="panel feed">
-        <div class="panel-head">
+      <!-- Live questions -->
+      <section class="feed-col" aria-label="Live questions">
+        <div class="col-head">
           <h2>Live questions</h2>
-          <span id="question-count" class="count">0</span>
+          <span id="q-count" class="count mono">0</span>
         </div>
-        <div id="questions" class="cards" aria-live="polite"></div>
-        <div id="questions-empty" class="empty">No questions yet. When attendees speak, they appear here.</div>
+        <div id="questions" class="stack" aria-live="polite" aria-relevant="additions"></div>
+        <div id="questions-empty" class="empty" hidden></div>
+        <div id="questions-skeleton" class="stack">
+          <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+        </div>
       </section>
 
-      <!-- Right: clusters -->
-      <section class="panel clusters">
-        <div class="panel-head">
+      <!-- Clusters -->
+      <aside class="insight-col" aria-label="What the room is asking">
+        <div class="col-head">
           <h2>What the room is asking</h2>
-          <span id="cluster-count" class="count">0</span>
+          <span id="c-count" class="count mono">0</span>
         </div>
-        <div id="clusters" class="cards" aria-live="polite"></div>
-        <div id="clusters-empty" class="empty">Similar questions get grouped here, ranked by how many people asked.</div>
-      </section>
+        <div id="clusters" class="stack" aria-live="polite"></div>
+        <div id="clusters-empty" class="empty" hidden></div>
+      </aside>
     </main>
 
-    <footer class="foot">
-      <span id="conn" class="muted small">connecting…</span>
-      <span class="muted small">Polling every 1.5s · HTTP only · no MQTT</span>
+    <footer class="app-foot">
+      <span id="conn-status" class="mono muted-xs">connecting…</span>
+      <span class="muted-xs">Polling · HTTP only · no MQTT</span>
     </footer>
   </div>
+
+  <!-- Confirmation dialog (native <dialog> = focus trap + Escape for free) -->
+  <dialog id="confirm-dialog" class="dialog">
+    <form method="dialog" class="dialog-card">
+      <h3 id="confirm-title">Are you sure?</h3>
+      <p id="confirm-body" class="muted"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-ghost">Cancel</button>
+        <button id="confirm-ok" value="confirm" class="btn btn-danger">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast / live notifications -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="/app.js"></script>
 </body>

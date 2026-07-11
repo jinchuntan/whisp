@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from whisp_api import __version__
 from whisp_api.config import get_settings
 from whisp_api.models import API_PREFIX
-from whisp_api.routes import admin, badge, health, questions
+from whisp_api.routes import admin, auth, badge, health, questions
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -40,16 +40,22 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
+    # The dashboard is same-origin, so CORS is not strictly needed, but we keep it
+    # correct for any cross-origin API use. Credentialed cookies require EXPLICIT
+    # origins — never "*". With the dev default ("*") we disable credentials in
+    # CORS (same-origin still works); production must set CORS_ALLOW_ORIGINS.
+    origins = settings.cors_origin_list
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=False,
+        allow_origins=origins,
+        allow_credentials=origins != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Versioned API routers.
     app.include_router(health.router, prefix=API_PREFIX)
+    app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(badge.router, prefix=API_PREFIX)
     app.include_router(questions.router, prefix=API_PREFIX)
     app.include_router(admin.router, prefix=API_PREFIX)
