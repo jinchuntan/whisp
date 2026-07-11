@@ -1,0 +1,7 @@
+# Pytest configuration for the worker test suite. Run from this directory:
+#   cd worker && python -m pytest
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]

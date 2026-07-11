@@ -1,0 +1,19 @@
+# ============================================================================
+# Whisp WORKER dependencies (WSL2 / Linux ONLY — never installed on Vercel).
+# ============================================================================
+supabase>=2.6,<3.0
+httpx>=0.27,<0.29
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+
+# Local transcription. faster-whisper bundles CTranslate2 + an audio decoder,
+# so no separate ffmpeg install is required for standard PCM WAV input.
+faster-whisper>=1.0,<2.0
+
+# Semantic clustering (local embeddings; pulls torch + numpy transitively).
+sentence-transformers>=2.7,<4.0
+
+# --- Agora (OPTIONAL, Linux/glibc only). Uncomment to enable the media bridge.
+#     Requires real Agora credentials + credit; see docs/AGORA_SETUP.md.
+#     Windows is NOT supported — use WSL2 Ubuntu.
+# agora-python-server-sdk>=2.4,<3.0

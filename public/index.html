@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whisp — Host Console</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
+</head>
+<body>
+  <!-- Login gate -->
+  <div id="login" class="login-overlay">
+    <form id="login-form" class="login-card" autocomplete="off">
+      <div class="brand"><span class="brand-mark">WHISP</span><span class="brand-sub">host console</span></div>
+      <p class="login-hint">Enter the admin API key to control this event.</p>
+      <input id="admin-key" type="password" placeholder="Admin API key" aria-label="Admin API key" />
+      <button type="submit" class="btn btn-primary">Enter console</button>
+      <p id="login-error" class="error-text" hidden></p>
+      <p class="login-note">Prototype auth — the key is kept only in this tab's sessionStorage.</p>
+    </form>
+  </div>
+
+  <!-- Console -->
+  <div id="console" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">WHISP</span><span class="brand-sub">host console</span></div>
+      <div class="topbar-status">
+        <span id="onair" class="onair off">OFF AIR</span>
+        <span id="mode-pill" class="pill pill-muted" title="Worker transcription mode">mode: —</span>
+        <span id="agora-warning" class="pill pill-warn" hidden>⚠ Agora mode — consumes credit</span>
+        <span id="worker-pill" class="pill pill-muted" title="Worker heartbeat">worker: —</span>
+        <button id="logout" class="btn btn-ghost btn-sm">Log out</button>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <main class="grid">
+      <!-- Left: controls -->
+      <section class="panel controls">
+        <h2>Event</h2>
+        <div class="field">
+          <label for="event-name">New event name</label>
+          <div class="row">
+            <input id="event-name" type="text" placeholder="e.g. DevConf 2026" />
+            <button id="create-event" class="btn btn-primary">Create</button>
+          </div>
+        </div>
+        <div id="event-info" class="event-info" hidden>
+          <div><span class="muted">Active event</span><strong id="event-title">—</strong></div>
+          <div><span class="muted">Join code</span><code id="event-code">—</code></div>
+        </div>
+
+        <h2>Round</h2>
+        <div class="field">
+          <label for="round-prompt">Host prompt (optional)</label>
+          <textarea id="round-prompt" rows="2" placeholder="Ask the room a question…"></textarea>
+          <div class="row">
+            <button id="open-round" class="btn btn-primary">Open round</button>
+            <button id="close-round" class="btn btn-danger" disabled>Close round</button>
+          </div>
+        </div>
+        <div id="round-info" class="round-info" hidden>
+          <span class="muted">Open round</span>
+          <p id="round-current-prompt">—</p>
+        </div>
+
+        <h2>Clustering</h2>
+        <button id="recluster" class="btn btn-ghost" disabled>Recompute clusters</button>
+        <p class="muted small">Regroups all answered-round questions by meaning.</p>
+      </section>
+
+      <!-- Middle: question feed -->
+      <section class="panel feed">
+        <div class="panel-head">
+          <h2>Live questions</h2>
+          <span id="question-count" class="count">0</span>
+        </div>
+        <div id="questions" class="cards" aria-live="polite"></div>
+        <div id="questions-empty" class="empty">No questions yet. When attendees speak, they appear here.</div>
+      </section>
+
+      <!-- Right: clusters -->
+      <section class="panel clusters">
+        <div class="panel-head">
+          <h2>What the room is asking</h2>
+          <span id="cluster-count" class="count">0</span>
+        </div>
+        <div id="clusters" class="cards" aria-live="polite"></div>
+        <div id="clusters-empty" class="empty">Similar questions get grouped here, ranked by how many people asked.</div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span id="conn" class="muted small">connecting…</span>
+      <span class="muted small">Polling every 1.5s · HTTP only · no MQTT</span>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

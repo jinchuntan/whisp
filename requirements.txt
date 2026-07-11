@@ -1,0 +1,15 @@
+# ============================================================================
+# Whisp WEB/API dependencies (Vercel deployment + API test suite).
+#
+# LIGHTWEIGHT ONLY. Do NOT add faster-whisper, torch, sentence-transformers,
+# numpy, or any Agora media SDK here — those belong in worker/requirements.txt
+# and must never be installed into the Vercel bundle.
+# ============================================================================
+fastapi>=0.115,<1.0
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+supabase>=2.6,<3.0
+httpx>=0.27,<0.29
+
+# Local dev server only (Vercel provides its own ASGI runtime).
+uvicorn[standard]>=0.30,<1.0

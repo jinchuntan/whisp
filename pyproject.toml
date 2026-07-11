@@ -1,0 +1,68 @@
+[project]
+name = "whisp"
+version = "0.1.0"
+description = "Whisp — anonymous voice Q&A for conferences (web/API control plane)"
+requires-python = ">=3.10"
+# Runtime dependencies are declared in requirements.txt (authoritative for Vercel).
+# Kept empty here so tooling/pyproject does not pull heavy or duplicate deps.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2,<9.0",
+  "pytest-asyncio>=0.23,<1.0",
+  "ruff>=0.5,<1.0",
+  "mypy>=1.10,<2.0",
+]
+
+[tool.setuptools]
+# This repo is run in-place (Vercel imports `main:app`); no build/packaging needed.
+py-modules = ["main"]
+packages = ["whisp_api", "whisp_api.routes"]
+
+# ---------------------------------------------------------------------------
+# Ruff — lint + format for the whole repo (API + worker + tests).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["firmware", "public", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+  "B008",  # FastAPI uses function calls (Depends(...)) in argument defaults.
+  "E501",  # line length handled by the formatter; don't fail on long strings.
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["whisp_api", "whisp_worker", "main", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+"worker/tests/**" = ["B011"]
+
+# ---------------------------------------------------------------------------
+# Pytest — root suite (API/contract) discovers tests/; worker suite is run
+# separately from within worker/ (see worker/pyproject or `make test-worker`).
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+# ---------------------------------------------------------------------------
+# Mypy — practical, not maximal. Third-party stubs are often missing for
+# supabase/faster-whisper, so those imports are ignored.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = false
+warn_redundant_casts = true
+ignore_missing_imports = true
+no_implicit_optional = true
+files = ["whisp_api", "main.py"]
+
+[[tool.mypy.overrides]]
+module = ["supabase.*", "gotrue.*", "storage3.*", "postgrest.*"]
+ignore_missing_imports = true

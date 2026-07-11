@@ -1,0 +1,59 @@
+# ---- Secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+worker/.env
+worker/.env.*
+!worker/.env.example
+firmware/whisp_badge/config.h
+*.pem
+*.key
+secrets.*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ---- ML model / HF caches (never vendor models into git) ----
+models/
+*.bin
+*.onnx
+*.ct2
+.cache/
+huggingface/
+
+# ---- Audio scratch / temp ----
+/tmp/
+tmp/
+*.wav
+!tests/**/fixtures/*.wav
+!worker/tests/**/fixtures/*.wav
+
+# ---- Vercel ----
+.vercel/
+.vercel
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Arduino build ----
+firmware/**/build/
+*.hex
+*.elf
