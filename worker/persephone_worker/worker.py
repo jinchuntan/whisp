@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from persephone_worker import __version__
+from persephone_worker.cluster_agent import (
+    AgentDecision,
+    AgentError,
+    ClusterAgent,
+    build_cluster_agent,
+)
 from persephone_worker.clustering import Clusterer, SentenceTransformerEmbedder
 from persephone_worker.config import WorkerSettings
 from persephone_worker.providers.agora import AgoraConfig, AgoraProvider
@@ -32,6 +38,7 @@ class Worker:
         queue: JobQueue,
         *,
         clusterer: Clusterer | None = None,
+        cluster_agent: ClusterAgent | None = None,
         fw_provider: FasterWhisperProvider | None = None,
         agora_provider: AgoraProvider | None = None,
     ) -> None:
@@ -73,6 +80,17 @@ class Worker:
         else:
             self.clusterer = None
 
+        # Clustering agent (agentic layer). Selected ONLY by CLUSTER_MODE; None for
+        # embedding_only (and for auto when no agent is configured), so those paths
+        # make ZERO LLM calls and behave byte-identically to the pre-agent worker.
+        self._cluster_mode = settings.resolved_cluster_mode
+        if cluster_agent is not None:
+            self._cluster_agent: ClusterAgent | None = cluster_agent
+        elif self.clusterer is not None and settings.cluster_uses_agent:
+            self._cluster_agent = build_cluster_agent(settings, self.clusterer)
+        else:
+            self._cluster_agent = None
+
         self._last_heartbeat = 0.0
         self._last_retention = 0.0
 
@@ -112,6 +130,16 @@ class Worker:
         order = MODE_ORDER[self.settings.transcription_mode]
         log.info("worker %s v%s starting", self.settings.resolved_worker_id, __version__)
         log.info("transcription_mode=%s provider_order=%s", self.settings.transcription_mode, order)
+        agent_active = self._cluster_agent is not None and self._cluster_mode in (
+            "agent_first",
+            "agent_only",
+        )
+        log.info(
+            "cluster_mode=%s (resolved=%s) agent=%s",
+            self.settings.cluster_mode,
+            self._cluster_mode,
+            "on" if agent_active else "off (embedding-only)",
+        )
         if self.settings.uses_agora:
             self._log_agora_status()
         if self._fw is not None:
@@ -223,6 +251,89 @@ class Worker:
                 tmp.unlink(missing_ok=True)
 
     def _cluster(self, round_id: str, question_id: str, transcript: str) -> None:
+        """Cluster one transcript. CLUSTER_MODE selects the path (default
+        ``embedding_only`` = today's cosine clustering, no LLM). The agent path
+        (``agent_first`` / ``agent_only``) uses the SAME queue writes; ``agent_first``
+        falls back to the embedding path on ANY agent failure, ``agent_only`` does not.
+        """
+        assert self.clusterer is not None
+        if self._cluster_agent is not None and self._cluster_mode in ("agent_first", "agent_only"):
+            try:
+                self._cluster_with_agent(round_id, question_id, transcript)
+                return
+            except AgentError as exc:
+                if self._cluster_mode == "agent_only":
+                    # agent_only never falls back (tests/demos): log and skip clustering.
+                    log.warning(
+                        "cluster agent failed question=%s code=%s (agent_only, no fallback)",
+                        question_id,
+                        exc.code,
+                    )
+                    raise
+                log.warning(
+                    "cluster agent fell back to embedding path question=%s code=%s",
+                    question_id,
+                    exc.code,
+                )
+        self._cluster_embedding(round_id, question_id, transcript)
+
+    # -- agent clustering path ----------------------------------------------
+    def _cluster_with_agent(self, round_id: str, question_id: str, transcript: str) -> None:
+        assert self._cluster_agent is not None
+        t0 = time.monotonic()
+        candidates = self.q.cluster_candidates_with_text(round_id)
+        decision = self._cluster_agent.decide(transcript, candidates)
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        self._apply_agent_decision(round_id, question_id, transcript, decision, latency_ms)
+
+    def _apply_agent_decision(
+        self,
+        round_id: str,
+        question_id: str,
+        transcript: str,
+        decision: AgentDecision,
+        latency_ms: int,
+    ) -> None:
+        if decision.action == "flag":
+            # A flagged question simply does not join a cluster. No schema/status
+            # change; question_count and the poll response stay untouched.
+            log.info(
+                "cluster agent flag question=%s reason=%s tools=%d %dms (not clustered)",
+                question_id,
+                decision.flag_reason,
+                decision.tool_calls,
+                latency_ms,
+            )
+            return
+        if decision.action == "assign" and decision.cluster_id:
+            count = self.q.add_question_to_cluster(
+                decision.cluster_id, question_id, decision.similarity
+            )
+            log.info(
+                "cluster agent join question=%s cluster=%s sim=%.3f tools=%d count=%d %dms",
+                question_id,
+                decision.cluster_id,
+                decision.similarity,
+                decision.tool_calls,
+                count,
+                latency_ms,
+            )
+            return
+        # create (the default terminal action)
+        canonical = decision.canonical_question or transcript
+        cluster = self.q.create_cluster(round_id, canonical, decision.embedding)
+        count = self.q.add_question_to_cluster(cluster["id"], question_id, 1.0, decision.embedding)
+        log.info(
+            "cluster agent new question=%s cluster=%s tools=%d count=%d %dms",
+            question_id,
+            cluster["id"],
+            decision.tool_calls,
+            count,
+            latency_ms,
+        )
+
+    # -- embedding clustering path (today's behaviour, unchanged) -----------
+    def _cluster_embedding(self, round_id: str, question_id: str, transcript: str) -> None:
         assert self.clusterer is not None
         candidates = self.q.cluster_candidates(round_id)
         decision = self.clusterer.decide(transcript, candidates)

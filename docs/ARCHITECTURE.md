@@ -25,6 +25,13 @@ them. It complements `IMPLEMENTATION_PLAN.md` (scope/phases) and `API.md` (contr
                                        │  WSL2 worker              │
                                        │  faster-whisper / Agora   │
                                        │  + sentence-transformers  │
+                                       │  ┌────────────────────┐   │
+                                       │  │ clustering agent   │   │
+                                       │  │ (LLM plan→tool→act;│   │
+                                       │  │  embedding+cosine  │   │
+                                       │  │  IS one of its     │   │
+                                       │  │  tools) — optional │   │
+                                       │  └────────────────────┘   │
                                        └──────────────────────────┘
 ```
 
@@ -88,6 +95,25 @@ transcript as the canonical question. Cluster embeddings are stored as
 runs in the worker. pgvector is documented as an optional future upgrade for
 DB-side nearest-neighbour search. `question_count` is maintained transactionally via
 an RPC. `similar_count` returned to the badge = the cluster's member count.
+
+#### D6a — Optional agentic clustering layer (see AGENT.md)
+The clustering decision can be made by an **LLM agent** instead of the raw threshold.
+Selected only by `CLUSTER_MODE` (`embedding_only` *(default)* | `auto` | `agent_first`
+| `agent_only`), mirroring `TRANSCRIPTION_MODE`/`CHATBOT_MODE`. The agent runs the
+existing `Worker._cluster` seam synchronously as a bounded **plan → tool-call → act**
+loop and calls tools to decide: `search_similar_clusters` (which **wraps the existing
+embedding + cosine code**, unchanged), then a terminal `assign_to_cluster` /
+`create_cluster` / `flag_question`. Terminal actions use the same queue writes as the
+embedding path. Hard rails — a tool-call cap + deadline (never hangs the loop),
+validation of any returned `cluster_id` against real candidates (no hallucinated
+writes), a length-capped label, `temperature 0.0`, and the transcript fenced as
+untrusted input. `agent_first` **falls back to the embedding path on any failure**
+(exception, timeout, malformed/unknown tool call, hallucinated id, cap reached,
+missing credentials), silently to the caller and logged like a provider attempt;
+`embedding_only` (the default) never constructs the agent and makes **zero LLM calls**,
+so default behaviour is byte-identical to before. The agent's tool client mirrors the
+chatbot provider design (injectable transport, safe error taxonomy, no secret
+logging) but is synchronous and speaks the tool-calling protocol.
 
 ### D7 — Agora isolated behind a boundary, credit-safe, with a real media bridge
 All Agora code lives in `providers/agora.py` + `agora_bridge.py` + `agora_token.py`
@@ -176,7 +202,9 @@ worker/persephone_worker/
   assistant.py  # AssistantProcessor: reconcile → claim → generate → store (2nd loop)
   queue.py      # JobQueue: rpc claim (questions + assistant_responses), writes
   audio.py      # download, WAV validate/parse, PCM conversion
-  clustering.py # Clusterer + EmbeddingModel protocol
+  clustering.py # Clusterer + EmbeddingModel protocol (exposed to the agent as a tool)
+  agent_llm.py  # sync OpenAI-compatible tool-calling client + deterministic mock
+  cluster_agent.py # plan->tool->act loop, tools, safety rails (CLUSTER_MODE)
   providers/
     base.py         # TranscriptionProvider protocol, TranscriptionResult, errors
     router.py       # ProviderRouter, MODE_ORDER
@@ -202,7 +230,9 @@ public/
 6. On success: `questions` → `done` with transcript/provider/fallback/latency.
    Empty → `empty`; all providers failed → `error` (safe message).
 7. Worker clusters the transcript → assigns/creates cluster → updates counts +
-   `questions.cluster_id`.
+   `questions.cluster_id`. With `CLUSTER_MODE=agent_first`/`agent_only` an LLM agent
+   makes this decision via tools (falling back to the embedding path on failure);
+   by default (`embedding_only`) it's the cosine threshold, unchanged. See AGENT.md.
 8. Badge polling sees `done` with `transcript`, `provider`, `fallback_used`,
    `similar_count`, `cluster_id`. Dashboard shows the question + cluster cards.
 9. Retention job deletes WAVs older than `AUDIO_RETENTION_HOURS` (default 24) without

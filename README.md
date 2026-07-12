@@ -29,6 +29,9 @@ ESP32-S3 badge ──(hold button, record WAV)──▶ Vercel FastAPI API ─�
   spends no credit.
 - **Semantic clustering:** local `all-MiniLM-L6-v2` embeddings + cosine similarity
   group similar questions; the badge sees `similar_count`.
+- **Agentic clustering (optional):** an LLM agent can drive the grouping instead —
+  it **plans, calls tools, and decides**. See below. Off by default; the embedding
+  clustering above runs unchanged when it's disabled.
 - **Voice assistant (optional):** a chatbot (`CHATBOT_MODE`: mock / Ollama /
   OpenAI-compatible) generates a short answer in the worker; the dashboard reads it
   aloud with the browser Web Speech API — which plays through your Windows output
@@ -36,6 +39,32 @@ ESP32-S3 badge ──(hold button, record WAV)──▶ Vercel FastAPI API ─�
   Agora credit**, off by default. See `docs/VOICE_ASSISTANT.md`.
 
 Read `docs/ARCHITECTURE.md` for the design and `docs/API.md` for the contract.
+
+## Agentic AI
+
+Persephone's clustering can run as a real **agent**: an LLM that plans, calls tools,
+and decides — not just a model in a pipeline. It runs once per transcribed question,
+in the worker, as a bounded **plan → tool-call → act** loop.
+
+- **Model:** any OpenAI-compatible tool-calling model (`AGENT_PROVIDER=openai_compatible`,
+  e.g. a hosted model or a local Ollama server's OpenAI endpoint), or a deterministic
+  offline **`mock`** agent for credential-free demos.
+- **Tools the agent can call:**
+  - `search_similar_clusters(query_text)` — **the existing embedding + cosine
+    clustering, exposed to the agent as a tool**; returns ranked candidate clusters.
+  - `assign_to_cluster(cluster_id, reason)` — join an existing cluster.
+  - `create_cluster(canonical_question, reason)` — open a new cluster and author its label.
+  - `flag_question(reason)` — drop a non-clusterable question out of grouping.
+- **Decision loop:** search → reason over the candidates → commit to exactly one
+  terminal action. Hard rails: a tool-call cap + wall-clock deadline (never hangs the
+  worker), validation of any returned `cluster_id` against the real candidates (no
+  hallucinated writes), a length-capped label, `temperature 0.0`, and the transcript
+  treated as untrusted input.
+- **Selection:** driven only by `CLUSTER_MODE` (see the table below). **Off by
+  default** (`embedding_only`); `agent_first` falls back to the embedding path on any
+  failure, so enabling the agent never breaks grouping.
+
+Full design, tool schemas, and the fallback ladder: **`docs/AGENT.md`**.
 
 ## Repository layout
 
@@ -259,6 +288,23 @@ that runs only in the WSL2 worker: it publishes badge PCM into an RTC channel vi
 the optional SDK, set `AGORA_LIVE_ENABLED=true`, and it stays off by default. Full
 setup, the manual **canary** live-test, and safety details are in
 `docs/AGORA_SETUP.md`.
+
+## Clustering modes
+
+`CLUSTER_MODE` (worker `.env`) selects how questions are grouped, mirroring
+`TRANSCRIPTION_MODE` and `CHATBOT_MODE`. Default is byte-identical to pre-agent
+Persephone and makes **zero LLM calls**.
+
+| Mode | Behaviour |
+|------|-----------|
+| `embedding_only` *(default)* | Local `all-MiniLM-L6-v2` + cosine. **No LLM, no credit.** |
+| `auto` | `agent_first` **if the agent is configured**, else `embedding_only`. |
+| `agent_first` | The agent decides; on **any** failure, fall back to the embedding path. |
+| `agent_only` | The agent decides, **no** fallback (tests/demos). |
+
+The agent (`AGENT_PROVIDER`: `mock` / `openai_compatible`) uses **no Agora credit**,
+is independent of `TRANSCRIPTION_MODE`, and inherits `CHATBOT_*` settings when the
+`AGENT_*` fields are blank. See `docs/AGENT.md`.
 
 ## Developer commands (WSL2)
 

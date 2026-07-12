@@ -105,6 +105,32 @@ class JobQueue:
             out.append(ClusterCandidate(id=row["id"], embedding=[float(x) for x in emb]))
         return out
 
+    def cluster_candidates_with_text(self, round_id: str) -> list[dict[str, Any]]:
+        """Like :meth:`cluster_candidates` but also selects ``canonical_question`` so
+        the clustering agent can reason over cluster TEXT, not just embeddings.
+
+        Additive and read-only; the embedding path keeps using the lighter
+        ``cluster_candidates`` (id + embedding only).
+        """
+        res = (
+            self._c.table("clusters")
+            .select("id,canonical_question,embedding")
+            .eq("round_id", round_id)
+            .eq("status", "open")
+            .execute()
+        )
+        out: list[dict[str, Any]] = []
+        for row in res.data or []:
+            emb = row.get("embedding") or []
+            out.append(
+                {
+                    "id": row["id"],
+                    "canonical_question": row.get("canonical_question") or "",
+                    "embedding": [float(x) for x in emb],
+                }
+            )
+        return out
+
     def create_cluster(
         self, round_id: str, canonical: str, embedding: list[float]
     ) -> dict[str, Any]:

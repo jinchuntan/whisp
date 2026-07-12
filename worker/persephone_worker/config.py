@@ -15,6 +15,12 @@ from persephone_worker.providers.router import MODE_ORDER
 # and answer generation are decoupled).
 CHATBOT_MODES = frozenset({"disabled", "mock", "ollama", "openai_compatible"})
 
+# Clustering-agent selection. Mirrors the TRANSCRIPTION_MODE / CHATBOT_MODE pattern
+# and is independent of both. 'embedding_only' is the default and is byte-identical
+# to the pre-agent behaviour (zero LLM calls).
+CLUSTER_MODES = frozenset({"embedding_only", "auto", "agent_first", "agent_only"})
+AGENT_PROVIDERS = frozenset({"mock", "openai_compatible"})
+
 
 def _default_worker_id() -> str:
     return f"{socket.gethostname()}-{os.getpid()}"
@@ -92,6 +98,32 @@ class WorkerSettings(BaseSettings):
     chatbot_reconcile_interval_seconds: float = 15.0
     chatbot_reconcile_limit: int = 50
 
+    # --- Clustering agent (agentic AI layer; optional, independent of the above) ---
+    # An LLM plan->tool-call->act loop that decides clustering by calling tools
+    # (the existing embedding/cosine search is exposed to it AS a tool). Selection
+    # is driven ONLY by CLUSTER_MODE, mirroring TRANSCRIPTION_MODE / CHATBOT_MODE.
+    #   embedding_only -> today's cosine clustering, byte-identical, ZERO LLM calls
+    #   auto           -> agent_first when the agent is configured, else embedding_only
+    #   agent_first    -> agent decides; on ANY failure fall back to the embedding path
+    #   agent_only     -> agent decides, no fallback (tests/demos)
+    cluster_mode: str = "embedding_only"
+    #   mock | openai_compatible
+    agent_provider: str = "openai_compatible"
+    # Any blank AGENT_* field below falls back to the matching CHATBOT_* value, so an
+    # already-configured voice assistant powers the agent with no extra setup.
+    agent_model: str = ""
+    agent_base_url: str = ""
+    # Secret — worker-only. Never sent to the browser/badge; never logged.
+    agent_api_key: str = ""
+    agent_timeout_seconds: float = 30.0
+    # Deterministic tool selection.
+    agent_temperature: float = 0.0
+    # Hard safety rails: bound the plan->act loop and the candidate set it sees.
+    agent_max_tool_calls: int = 6
+    agent_max_candidates: int = 12
+    # Whether the agent may flag a question (off_topic/abusive/etc.) out of clustering.
+    agent_allow_flag: bool = True
+
     # --- Loop / lease / heartbeat ---
     worker_id: str = ""
     poll_interval_seconds: float = 1.0
@@ -119,6 +151,22 @@ class WorkerSettings(BaseSettings):
             raise ValueError(f"CHATBOT_MODE must be one of {sorted(CHATBOT_MODES)}, got {v!r}")
         return v
 
+    @field_validator("cluster_mode")
+    @classmethod
+    def _valid_cluster_mode(cls, v: str) -> str:
+        v = (v or "embedding_only").strip().lower()
+        if v not in CLUSTER_MODES:
+            raise ValueError(f"CLUSTER_MODE must be one of {sorted(CLUSTER_MODES)}, got {v!r}")
+        return v
+
+    @field_validator("agent_provider")
+    @classmethod
+    def _valid_agent_provider(cls, v: str) -> str:
+        v = (v or "openai_compatible").strip().lower()
+        if v not in AGENT_PROVIDERS:
+            raise ValueError(f"AGENT_PROVIDER must be one of {sorted(AGENT_PROVIDERS)}, got {v!r}")
+        return v
+
     @property
     def resolved_worker_id(self) -> str:
         return self.worker_id or _default_worker_id()
@@ -126,6 +174,44 @@ class WorkerSettings(BaseSettings):
     @property
     def chatbot_enabled(self) -> bool:
         return self.chatbot_mode != "disabled"
+
+    # --- Clustering agent resolution (AGENT_* falls back to CHATBOT_* when blank) ---
+    @property
+    def resolved_agent_model(self) -> str:
+        return (self.agent_model or self.chatbot_model or "").strip()
+
+    @property
+    def resolved_agent_base_url(self) -> str:
+        return (self.agent_base_url or self.chatbot_base_url or "").strip()
+
+    @property
+    def resolved_agent_api_key(self) -> str:
+        return self.agent_api_key or self.chatbot_api_key or ""
+
+    @property
+    def agent_configured(self) -> bool:
+        """True when the agent has enough config to attempt a live decision.
+
+        The mock provider needs no credentials; the HTTP provider needs a base URL
+        and a model (inherited from CHATBOT_* when the AGENT_* fields are blank).
+        With neither set, this is False so ``auto`` stays on the embedding path.
+        """
+        if self.agent_provider == "mock":
+            return True
+        return bool(self.resolved_agent_base_url and self.resolved_agent_model)
+
+    @property
+    def resolved_cluster_mode(self) -> str:
+        """Resolve ``auto`` to a concrete path. ``auto`` uses the agent only when it
+        is configured; otherwise it is byte-identical to ``embedding_only``."""
+        if self.cluster_mode == "auto":
+            return "agent_first" if self.agent_configured else "embedding_only"
+        return self.cluster_mode
+
+    @property
+    def cluster_uses_agent(self) -> bool:
+        """Whether the resolved mode ever invokes the agent (never for embedding_only)."""
+        return self.resolved_cluster_mode in ("agent_first", "agent_only")
 
     @property
     def uses_agora(self) -> bool:
