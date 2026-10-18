@@ -1,5 +1,11 @@
 # Persephone 🎙️
 
+**Top 5 finalist · Robotics & Physical AI, Agentic AI Build Week 2026**
+
+Built with [Nathan Hor](https://github.com/NathanHor22). [Project and recognition](https://www.fovea.space/#recognition).
+
+This is the public Persephone implementation: ESP32 badge firmware, FastAPI API, transcription worker and host dashboard. Related [networking-badge design notes](https://github.com/jinchuntan/persephone) and the [earlier Whisp prototype](https://github.com/jinchuntan/whisp-voice-qa) are kept separately.
+
 **Anonymous voice Q&A for conferences.** Lean into a lanyard badge, speak quietly,
 and your question appears anonymously on the speaker's screen — no raised hand, no
 mic runner, no interruption. Similar questions are clustered by meaning so the host
